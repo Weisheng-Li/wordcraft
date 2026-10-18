@@ -1,0 +1,7 @@
+{
+  "spells": [
+    { "id": "fireball",   "recipe": ["fire", "bolt"],  "damage": 10, "speed": 160 },
+    { "id": "ice_wall",   "recipe": ["ice", "wall"],   "damage": 0,  "speed": 0 },
+    { "id": "thunderrain","recipe": ["storm", "rain"], "damage": 6,  "speed": 0 }
+  ]
+}

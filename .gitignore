@@ -1,0 +1,15 @@
+# Build output
+*.love
+build/
+dist/
+
+# OS / editor junk
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+
+# Godot (for a future migration)
+.godot/
+*.import
