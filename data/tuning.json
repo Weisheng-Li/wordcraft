@@ -1,0 +1,51 @@
+{
+  "player": {
+    "hp": 10,
+    "moveSpeed": 80,
+    "hitboxW": 10,
+    "hitboxH": 6
+  },
+  "dash": {
+    "distance": 48,
+    "duration": 0.15,
+    "cooldown": 2.0
+  },
+  "spells": {
+    "attackDamage": 1,
+    "telegraph": 1.0,
+    "beamShowTime": 0.25,
+    "accelerateBonus": 0.35,
+    "accelerateMaxStacks": 3,
+    "raiseTime": 0.35,
+    "repeatGap": 0.35
+  },
+  "hit": {
+    "knockbackDistance": 14,
+    "knockbackDuration": 0.12
+  },
+  "conditions": {
+    "standStillTime": 1.0,
+    "closeDistance": 56,
+    "farDistance": 160
+  },
+  "templates": {
+    "dealDelay": 0.5,
+    "timeout": 15
+  },
+  "words": {
+    "waveInterval": 12,
+    "spellsPerWave": 2,
+    "guaranteed": ["attack"],
+    "warning": 1,
+    "minPlayerDistance": 40,
+    "minWordDistance": 24,
+    "pickupRadius": 10
+  },
+  "stacking": {
+    "maxLevel": 3,
+    "repeatCap": 5
+  },
+  "round": {
+    "countdown": 3
+  }
+}

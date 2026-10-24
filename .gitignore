@@ -13,3 +13,6 @@ desktop.ini
 # Godot (for a future migration)
 .godot/
 *.import
+
+# Dev loop restart trigger
+.dev/

@@ -1,0 +1,7 @@
+{
+  "templates": [
+    { "id": "when",   "kind": "when",   "blanks": ["condition", "spell"] },
+    { "id": "combo",  "kind": "combo",  "blanks": ["spell", "spell"] },
+    { "id": "repeat", "kind": "repeat", "blanks": ["spell"], "repeatMin": 2, "repeatMax": 5 }
+  ]
+}

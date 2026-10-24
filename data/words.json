@@ -1,10 +1,12 @@
 {
   "words": [
-    { "id": "fire",  "type": "element" },
-    { "id": "ice",   "type": "element" },
-    { "id": "storm", "type": "element" },
-    { "id": "bolt",  "type": "shape" },
-    { "id": "wall",  "type": "shape" },
-    { "id": "rain",  "type": "shape" }
+    { "id": "attack",     "type": "spell",     "text": "attack",         "label": "attack" },
+    { "id": "shield",     "type": "spell",     "text": "shield",         "label": "shield" },
+    { "id": "accelerate", "type": "spell",     "text": "accelerate",     "label": "speed" },
+    { "id": "dash",       "type": "condition", "text": "I dash",         "label": "dash" },
+    { "id": "still",      "type": "condition", "text": "I stand still",  "label": "still" },
+    { "id": "hit",        "type": "condition", "text": "I get hit",      "label": "hit" },
+    { "id": "close",      "type": "condition", "text": "enemy is close", "label": "close" },
+    { "id": "far",        "type": "condition", "text": "enemy is far",   "label": "far" }
   ]
 }
