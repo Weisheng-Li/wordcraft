@@ -1,0 +1,43 @@
+{
+  "arena": {
+    "tileSize": 16,
+    "top": 52,
+    "legend": "'#' wall, '1' player start, '2' dummy, '.' floor. Keep the bottom row free: the category tabs are drawn there. Tiles share one grid (cols 3/7/11, rows 3 then 5) so switching categories never moves the first row.",
+    "rows": [
+      "....................",
+      "....................",
+      "....................",
+      "1.............#..2..",
+      "....................",
+      "....................",
+      "....................",
+      "...................."
+    ]
+  },
+  "dummy": {
+    "range": 64,
+    "cooldown": 2.5
+  },
+  "categories": [
+    { "id": "templates",  "label": "TEMPLATES",  "type": "template" },
+    { "id": "spells",     "label": "SPELLS",     "type": "spell" },
+    { "id": "conditions", "label": "CONDITIONS", "type": "condition" }
+  ],
+  "items": [
+    { "category": "templates", "template": "when",   "label": "when",   "col": 3,  "row": 3 },
+    { "category": "templates", "template": "combo",  "label": "and",    "col": 7,  "row": 3 },
+    { "category": "templates", "template": "repeat", "label": "repeat", "col": 11, "row": 3 },
+
+    { "category": "spells", "word": "attack",     "col": 3,  "row": 3 },
+    { "category": "spells", "word": "shield",     "col": 7,  "row": 3 },
+    { "category": "spells", "word": "accelerate", "col": 11, "row": 3 },
+
+    { "category": "conditions", "word": "dash",  "col": 3,  "row": 3 },
+    { "category": "conditions", "word": "still", "col": 7,  "row": 3 },
+    { "category": "conditions", "word": "hit",   "col": 11, "row": 3 },
+    { "category": "conditions", "word": "close", "col": 3,  "row": 5 },
+    { "category": "conditions", "word": "far",   "col": 7,  "row": 5 },
+
+    { "category": "always", "reset": true, "label": "reset", "col": 2, "row": 7 }
+  ]
+}

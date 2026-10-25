@@ -16,7 +16,7 @@ Built with [LÖVE](https://love2d.org) 11.5. Game rules live in [docs/DESIGN.md]
 | Move   | `W` `A` `S` `D` | `↑` `←` `↓` `→` |
 | Dash   | `Left Shift`    | `Right Shift`  |
 
-`R` restarts after a round ends. `Esc` quits.
+`R` restarts after a round ends. `F2` toggles the **training room** (one player vs a dummy; `Space` switches which tiles are on the floor: templates, spells or conditions). `Esc` quits.
 
 ## Tuning and testing
 
@@ -24,6 +24,7 @@ Built with [LÖVE](https://love2d.org) 11.5. Game rules live in [docs/DESIGN.md]
 - Every gameplay number is in `data/tuning.json`. After editing it (or any code), press **F5** in the game to reload. Live reload without a restart is planned.
 - `lovec . --selftest` runs a headless check of the spell rules.
 - `lovec . --shot` saves a screenshot after a few seconds to LÖVE's save folder, then quits.
+- `lovec . --shot-training` does the same for the training room.
 
 ## Sprites
 

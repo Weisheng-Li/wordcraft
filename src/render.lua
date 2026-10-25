@@ -26,6 +26,9 @@ local C = {
     timer     = { hex("#ffcd75") },
     shield    = { hex("#73eff7") },
     aim       = { hex("#e43b44") },
+    template  = { hex("#c9b2ff") },  -- training-room template tiles
+    reset     = { hex("#94b0c2") },  -- training-room reset tile
+    player    = { { hex("#41a6f6") }, { hex("#e43b44") } }, -- per-player: beams, orbs, pickups
     hpText    = { hex("#ff6b6b") },
     -- Template text / timer colour per stack level (1, 2, 3).
     level     = { { hex("#f4f4f4") }, { hex("#ffcd75") }, { hex("#ff77c8") } },
@@ -38,7 +41,6 @@ local CHEST = 13    -- laser height above the feet
 
 local fonts = {}
 local hurt = { 0, 0 }   -- hit-flash timers, purely visual
-local lastHp = {}
 local levelFlash = { 0, 0 } -- HUD flash when a template stacks up
 local lastLevel = {}
 
@@ -47,6 +49,13 @@ local FLOAT_TIME = 0.9
 local floaters = {}                               -- { text, color, x, y, age }
 local seenBeams = setmetatable({}, { __mode = "k" })
 local drawFloaters -- defined with the other floater code below
+
+-- Pickup feedback: the taken tile flies to the picker, a ring bursts at the
+-- spot in the picker's colour.
+local PICKUP_TIME = 0.35
+local pickups = {}                                -- { def, x, y, player, age }
+local seenPickups = setmetatable({}, { __mode = "k" })
+local drawPickups -- defined below
 
 function Render.load()
     fonts.small = love.graphics.newFont(8, "mono")
@@ -59,8 +68,9 @@ local function setColor(c, a)
     love.graphics.setColor(c[1], c[2], c[3], a or c[4] or 1)
 end
 
+local TYPE_COLOR = { spell = "spell", condition = "condition", template = "template", reset = "reset" }
 local function typeColor(wordType)
-    return wordType == "spell" and C.spell or C.condition
+    return C[TYPE_COLOR[wordType] or "condition"]
 end
 
 local function printCentered(text, font, cx, y)
@@ -185,12 +195,12 @@ local function drawPlayer(game, p, sprites, time)
                 local charge = 1 - l.timer / tuning.spells.telegraph
                 local ox, oy = orbPos(game, p, sprites, l.slot)
                 local r = 1.5 + charge * 2.5
-                setColor(C.aim, 0.35)
+                setColor(C.player[p.id], 0.35)
                 love.graphics.circle("fill", ox, oy, r + 1.5)
                 if charge > 0.8 and math.floor(time * 24) % 2 == 0 then
                     love.graphics.setColor(1, 1, 1, 1)
                 else
-                    setColor(C.aim)
+                    setColor(C.player[p.id])
                 end
                 love.graphics.circle("fill", ox, oy, r)
             end
@@ -214,11 +224,26 @@ local function drawPlayer(game, p, sprites, time)
         love.graphics.rectangle("fill", bx, by, math.floor(bw * (1 - p.dashCooldown / tuning.dash.cooldown) + 0.5), 2)
     end
 
-    -- One ring per shield charge, growing outward.
-    local rings = math.min(p.shield, 6)
-    for i = 1, rings do
-        setColor(C.shield, 0.9 - (i - 1) * 0.1)
-        love.graphics.circle("line", p.x, p.y - 12, 11 + (i - 1) * 3)
+    -- Shield charges: one ring per charge up to 5; beyond that a single
+    -- bold ring with the count ("x6"), so a big stack stays readable.
+    if p.shield > 5 then
+        setColor(C.shield)
+        love.graphics.setLineWidth(3)
+        love.graphics.circle("line", p.x, p.y - 12, 14)
+        love.graphics.setLineWidth(1)
+        local label = "x" .. p.shield
+        local f = fonts.small
+        love.graphics.setFont(f)
+        local lx, ly = math.floor(p.x + 11), math.floor(p.y - 30)
+        setColor(C.bg)
+        love.graphics.print(label, lx + 1, ly + 1)
+        setColor(C.shield)
+        love.graphics.print(label, lx, ly)
+    else
+        for i = 1, p.shield do
+            setColor(C.shield, 0.9 - (i - 1) * 0.1)
+            love.graphics.circle("line", p.x, p.y - 12, 11 + (i - 1) * 3)
+        end
     end
 
     -- Speed lines trailing behind: two more per accelerate stack.
@@ -237,7 +262,7 @@ end
 
 local function drawLasers(game, sprites, time)
     local t = game.data.tuning
-    -- Aim: thin red ray from the caster's gem, flashing faster as it's
+    -- Aim: thin ray in the caster's colour from their orb, flashing faster as it's
     -- about to fire.
     for _, l in ipairs(game.lasers) do
         local left = l.timer / t.spells.telegraph          -- 1 -> 0
@@ -248,16 +273,16 @@ local function drawLasers(game, sprites, time)
         local ex, ey = l.target.x, l.target.y
         if not clear then ex, ey = wx, wy end
         local gx, gy = orbPos(game, l.caster, sprites, l.slot)
-        setColor(C.aim, on and 0.9 or 0.25)
+        setColor(C.player[l.caster.id], on and 0.9 or 0.25)
         love.graphics.setLineWidth(1)
         love.graphics.line(gx, gy, ex, ey - CHEST)
     end
-    -- Fired beams: thick red glow with a white core, shrinking as it fades.
+    -- Fired beams: thick glow in the caster's colour with a white core, shrinking as it fades.
     for _, b in ipairs(game.beams) do
         local k = b.timer / t.spells.beamShowTime           -- 1 -> 0
         local x1, y1 = orbPos(game, b.caster, sprites, b.slot)
         local x2, y2 = b.x2, b.y2 - CHEST
-        setColor(C.aim, 0.9)
+        setColor(C.player[b.caster.id], 0.9)
         love.graphics.setLineWidth(math.max(1, 7 * k))
         love.graphics.line(x1, y1, x2, y2)
         love.graphics.setColor(1, 1, 1, 1)
@@ -286,6 +311,15 @@ local function drawWorld(game, sprites, time)
         for _, m in ipairs(wf.markers) do drawMarker(m, time) end
     end
 
+    -- Training dummy's range: thin circle, brighter while you're inside it.
+    if game.mode == "training" then
+        local d, p = game.players[2], game.players[1]
+        local r = game.data.training.dummy.range
+        local dx, dy = p.x - d.x, p.y - d.y
+        setColor(C.aim, (dx * dx + dy * dy <= r * r) and 0.7 or 0.3)
+        love.graphics.circle("line", d.x, d.y, r)
+    end
+
     -- Y-sort walls, words and players by the y of their floor contact.
     local items = {}
     for r = 1, arena.rows do
@@ -306,6 +340,7 @@ local function drawWorld(game, sprites, time)
     for _, it in ipairs(items) do it.draw() end
 
     drawLasers(game, sprites, time)
+    drawPickups()
     drawFloaters()
 end
 
@@ -315,7 +350,8 @@ end
 -- "when [close] or [___], repeat 3: cast [attack] and [___]".
 local function templateTokens(book, words)
     local tpl = book.template
-    if not tpl then return { { text = "..." } } end
+    -- No template: "..." in versus (one is about to be dealt); a hint in training.
+    if not tpl then return { { text = book.sandbox and "pick up a template tile" or "..." } } end
     local function blank(b)
         return { blank = b.type, text = b.word and words.byId[b.word].label or "___", filled = b.word and true }
     end
@@ -410,6 +446,40 @@ end
 
 local PANEL_W = 152
 
+-- Training room: which tile category is on the floor, as tabs along the
+-- bottom of the arena. The active tab is filled in its tile colour.
+local function drawCategoryTabs(game)
+    local f = fonts.small
+    love.graphics.setFont(f)
+    local cats = game.data.training.categories
+    local hint = "SPACE: switch"
+    local gap = 6
+    local widths, total = {}, f:getWidth(hint)
+    for i, c in ipairs(cats) do
+        widths[i] = f:getWidth(c.label) + 6
+        total = total + widths[i] + gap
+    end
+    local y = game.height - 11
+    setColor(C.bg, 0.8)
+    love.graphics.rectangle("fill", 0, y - 1, game.width, 12)
+    local x = math.floor((game.width - total) / 2)
+    for i, c in ipairs(cats) do
+        local col = typeColor(c.type)
+        if i == game.trainingCategory then
+            setColor(col)
+            love.graphics.rectangle("fill", x, y, widths[i], 10)
+            setColor(C.bg)
+        else
+            setColor(col, 0.45)
+            love.graphics.rectangle("line", x + 0.5, y + 0.5, widths[i] - 1, 9)
+        end
+        love.graphics.print(c.label, x + 3, y)
+        x = x + widths[i] + gap
+    end
+    setColor(C.dim)
+    love.graphics.print(hint, x, y)
+end
+
 local function drawPanel(game, k, x)
     local t = game.data.tuning
     local words = game.data.words
@@ -434,16 +504,94 @@ local function drawPanel(game, k, x)
     love.graphics.setFont(fonts.small)
     love.graphics.print(effectText(book, words), x + t.player.hp * 5 + 4, 29)
 
-    -- Template timeout, coloured by stack level
+    -- Template timeout, coloured by stack level (no timeouts in training)
     local tl = book.template and book.template.timeLeft / t.templates.timeout or 0
-    drawBar(x, 40, PANEL_W - 12, tl, levelCol)
+    if not book.sandbox then drawBar(x, 40, PANEL_W - 12, tl, levelCol) end
+end
+
+-- Training guide: a title, up to two lines of instructions, and a separate
+-- counter (templates stacked / blanks left) set apart at the bottom. It
+-- reads two things: the template held (top left) and which tile tab is on
+-- the floor (bottom). Spell effects explain themselves, so only traps (not
+-- obvious) get their own message. How to switch tabs is hinted elsewhere.
+local function trainingGuide(game)
+    local t, words = game.data.tuning, game.data.words
+    local book = game.spellbooks[1]
+    local tpl = book.template
+    local max = t.stacking.maxLevel
+    local level = tpl and tpl.level or 0
+    local tab = game.data.training.categories[game.trainingCategory].type
+
+    -- A trap was just armed and nothing new is being built yet.
+    if book.trap and not tpl then
+        local names = {}
+        for i, id in ipairs(book.trap.conditions) do names[i] = words.byId[id].label end
+        return "TRAP ARMED", {
+            "it fires once, the moment",
+            "this is true: " .. table.concat(names, " or "),
+        }, "try it near the dummy"
+    end
+
+    -- Templates tab: step 1, with the stack count.
+    if tab == "template" then
+        local counter = "templates " .. level .. "/" .. max
+        if level >= max then
+            return "STEP 1: TEMPLATES", { "max " .. max .. " templates stacked:", "now fill the blanks" }, counter
+        end
+        return "STEP 1: TEMPLATES", { "walk onto templates: up to " .. max, "stack into one bigger spell" }, counter
+    end
+
+    -- Word tabs without a template: step 1 first.
+    if not tpl then
+        return "STEP 1: TEMPLATES", { "pick up a template first,", "from the templates tab" }
+    end
+
+    -- Word tabs with a template: step 2, fill the blanks.
+    local open, needSpell, needCond = 0, false, false
+    for _, b in ipairs(book:blanks()) do
+        if not b.word then
+            open = open + 1
+            if b.type == "spell" then needSpell = true else needCond = true end
+        end
+    end
+    local both = needSpell and needCond
+    local l1, l2
+    if (tab == "spell" and needSpell) or (tab == "condition" and needCond) then
+        l1 = "walk onto " .. (tab == "spell" and "spells" or "conditions") .. " to fill"
+        l2 = both and ("the rest: " .. (tab == "spell" and "conditions" or "spells") .. " tab") or "the blanks"
+    else
+        local need = needCond and "conditions" or "spells"
+        l1 = both and "you need spells and" or ("you need " .. need .. ",")
+        l2 = both and "conditions (other tabs)" or ("from the " .. need .. " tab")
+    end
+    return "STEP 2: FILL THE BLANKS", { l1, l2 }, open .. " blank" .. (open == 1 and "" or "s") .. " left"
+end
+
+local function drawTrainingPanel(game, x)
+    local title, lines, counter = trainingGuide(game)
+    love.graphics.setFont(fonts.small)
+    setColor(C.template)
+    love.graphics.print(title, x, 0)
+    setColor(C.dim)
+    for i, line in ipairs(lines) do
+        love.graphics.print(line, x, i * 8)
+    end
+    -- Counter sits apart from the instructions, in brighter text.
+    if counter then
+        setColor(C.text)
+        love.graphics.print(counter, x, 32)
+    end
 end
 
 local function drawHud(game)
     setColor(C.bg)
     love.graphics.rectangle("fill", 0, 0, game.width, game.arena.top - WALL_RISE)
     drawPanel(game, 1, 4)
-    drawPanel(game, 2, game.width / 2 + 4)
+    if game.mode == "training" then
+        drawTrainingPanel(game, game.width / 2 + 4)
+    else
+        drawPanel(game, 2, game.width / 2 + 4)
+    end
 end
 
 local function drawBanner(game)
@@ -464,6 +612,46 @@ end
 
 ---------------------------------------------------------------- entry
 
+local function spawnPickups(game)
+    for _, e in ipairs(game.wordfield.events) do
+        if not seenPickups[e] then
+            seenPickups[e] = true
+            pickups[#pickups + 1] = { def = e.def, x = e.x, y = e.y, player = e.player, age = 0 }
+        end
+    end
+end
+
+function drawPickups()
+    local f = fonts.small
+    love.graphics.setFont(f)
+    for _, pk in ipairs(pickups) do
+        local k = pk.age / PICKUP_TIME
+        local col = C.player[pk.player.id]
+        -- Burst ring where the tile was.
+        setColor(col, 1 - k)
+        love.graphics.setLineWidth(2)
+        love.graphics.circle("line", pk.x, pk.y - 6, 4 + k * 14)
+        love.graphics.setLineWidth(1)
+        -- Tile copy flying to the picker's head, shrinking.
+        local e = 1 - (1 - k) * (1 - k)
+        local tx, ty = pk.player.x, pk.player.y - 30
+        local x = pk.x + (tx - pk.x) * e
+        local y = (pk.y - 8) + (ty - (pk.y - 8)) * e
+        local s = 1 - 0.6 * k
+        local w, h = f:getWidth(pk.def.label) + 4, 9
+        love.graphics.push()
+        love.graphics.translate(x, y)
+        love.graphics.scale(s, s)
+        setColor(col)
+        love.graphics.rectangle("fill", -w / 2 - 1, -h / 2 - 1, w + 2, h + 2)
+        setColor(typeColor(pk.def.type))
+        love.graphics.rectangle("fill", -w / 2, -h / 2, w, h)
+        setColor(C.bg)
+        love.graphics.print(pk.def.label, -w / 2 + 2, -h / 2 - 1)
+        love.graphics.pop()
+    end
+end
+
 local function spawnFloaters(game)
     local t = game.data.tuning
     for _, b in ipairs(game.beams) do
@@ -472,6 +660,7 @@ local function spawnFloaters(game)
             local text, color
             if b.result == "hit" then
                 text, color = "-" .. t.spells.attackDamage, C.hpText
+                hurt[game:opponentOf(b.caster).id] = 0.4
             elseif b.result == "blocked" then
                 text, color = "BLOCK", C.shield
             elseif b.result == "dodged" then
@@ -510,14 +699,17 @@ end
 
 function Render.update(dt, game)
     spawnFloaters(game)
+    spawnPickups(game)
+    for i = #pickups, 1, -1 do
+        pickups[i].age = pickups[i].age + dt
+        if pickups[i].age >= PICKUP_TIME then table.remove(pickups, i) end
+    end
     for i = #floaters, 1, -1 do
         floaters[i].age = floaters[i].age + dt
         if floaters[i].age >= FLOAT_TIME then table.remove(floaters, i) end
     end
 
     for k, p in ipairs(game.players) do
-        if lastHp[k] and p.hp < lastHp[k] then hurt[k] = 0.4 end
-        lastHp[k] = p.hp
         hurt[k] = math.max(0, hurt[k] - dt)
 
         local tpl = game.spellbooks[k].template
@@ -531,6 +723,7 @@ end
 function Render.draw(game, sprites, time)
     love.graphics.clear(C.bg)
     drawWorld(game, sprites, time)
+    if game.mode == "training" then drawCategoryTabs(game) end
     drawHud(game)
     drawBanner(game)
 end

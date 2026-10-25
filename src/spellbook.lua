@@ -22,6 +22,7 @@ function Spellbook.new(player, opponent, data, castSpell)
     self.dealTimer = 0   -- counts down to the next template when template == nil
     self.trap = nil      -- { conditions = {ids}, spells = {ids}, n }
     self.casting = nil   -- { spells, left, raiseLeft, gapLeft } while raising the staff
+    self.sandbox = false -- training room: no dealing, no timeouts; templates come from tiles
     return self
 end
 
@@ -48,8 +49,11 @@ local function append(into, from)
     for _, b in ipairs(from) do into[#into + 1] = b end
 end
 
--- Stack `new` onto `old`: filled words stay, blanks pile up, repeat counts
--- add (capped). The result is one level higher.
+-- Stack `new` onto `old`: filled words stay and blanks pile up. Two
+-- repeats are the exception: their counts add and the new repeat's spell
+-- blank is dropped, so repeat 5 + repeat 5 = "repeat 10: cast ___" (more
+-- casts of one spell) while repeat 5 + and = "repeat 5: cast ___ and ___"
+-- (fewer casts, more spells). The result is one level higher.
 function Spellbook.merge(old, new, tuning)
     local merged = {
         level = old.level + 1,
@@ -57,9 +61,12 @@ function Spellbook.merge(old, new, tuning)
         timeLeft = tuning.templates.timeout,
     }
     append(merged.conditions, old.conditions); append(merged.conditions, new.conditions)
-    append(merged.spells, old.spells); append(merged.spells, new.spells)
-    if old.n or new.n then
-        merged.n = math.min((old.n or 0) + (new.n or 0), tuning.stacking.repeatCap)
+    append(merged.spells, old.spells)
+    if old.n and new.n then
+        merged.n = old.n + new.n
+    else
+        append(merged.spells, new.spells)
+        merged.n = old.n or new.n
     end
     return merged
 end
@@ -114,6 +121,31 @@ function Spellbook:accept(word, tuning)
         if not b.word then return end
     end
     self:complete(tuning)
+end
+
+-- Training-room tiles. A template tile starts a template or stacks onto
+-- the current one (up to the usual max level); reset clears everything.
+function Spellbook:canTake(def, tuning)
+    if def.type == "template" then
+        return not self.template or self.template.level < tuning.stacking.maxLevel
+    elseif def.type == "reset" then
+        return true
+    end
+    return self:canAccept(def)
+end
+
+function Spellbook:take(def, tuning, rand)
+    if def.type == "template" then
+        local tpl = def.template
+        local n = def.n or (tpl.kind == "repeat" and rand(tpl.repeatMin, tpl.repeatMax)) or nil
+        local new = Spellbook.makeTemplate(tpl, n, tuning)
+        self.template = self.template and Spellbook.merge(self.template, new, tuning) or new
+    elseif def.type == "reset" then
+        self:clearEffect()
+        self.template = nil
+    else
+        self:accept(def, tuning)
+    end
 end
 
 -- Remove whatever the previous template produced (the effect window ends).
@@ -215,7 +247,9 @@ function Spellbook:checkTrap(tuning)
 end
 
 function Spellbook:update(dt, tuning, rand)
-    if self.template then
+    if self.sandbox then
+        -- no timeouts, no dealing
+    elseif self.template then
         self.template.timeLeft = self.template.timeLeft - dt
         if self.template.timeLeft <= 0 then self:timeout(tuning, rand) end
     else

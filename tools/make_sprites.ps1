@@ -1,4 +1,4 @@
-# Generates the wizard sprites as PNGs from the text grid below.
+# Generates the character sprites (wizards, training dummy) as PNGs from the text grids below.
 # Run from the project root:  powershell -ExecutionPolicy Bypass -File tools\make_sprites.ps1
 # Optional: -PreviewDir <dir> also writes 10x-scaled copies for easy viewing.
 param([string]$PreviewDir)
@@ -67,8 +67,54 @@ $wizardCast = @(
     "..OOOOO.OOOOO..."
 )
 
-# Output file suffix -> grid.
-$frames = [ordered]@{ "" = $wizard; "_cast" = $wizardCast }
+# Training dummy, 16x24: sack head, crossbar arms with straw ends, target
+# on the chest, post and base. M = dark burlap (stitches).
+$dummy = @(
+    "................",
+    ".....OOOOOO.....",
+    "....ONNNNNNO....",
+    "....ONMNNMNO....",
+    "....ONNNNNNO....",
+    "....ONNMMNNO....",
+    ".....ONNNNO.....",
+    "......OPPO......",
+    "..OOOOOPPOOOOO..",
+    ".BPPPPPPPPPPPPB.",
+    "..OOOONNNNNNOO..",
+    ".....ONWWWWNO...",
+    ".....ONWRRWNO...",
+    ".....ONWRRWNO...",
+    ".....ONWWWWNO...",
+    ".....ONNNNNNO...",
+    ".....ONNMMNNO...",
+    "......OOPPOO....",
+    ".......OPPO.....",
+    ".......OPPO.....",
+    ".......OPPO.....",
+    ".......OPPO.....",
+    ".....OOOPPOOO...",
+    "....OKKKKKKKKO.."
+)
+
+# Dummy casting frame, 16x28: holds up a stick with a red crystal. The
+# crystal sits where the wizard's gem does (col 14, row 3).
+$dummyCast = @(
+    "................",
+    "................",
+    "..............L.",
+    ".............GLG",
+    "..............G.",
+    ".....OOOOOO...T.",
+    "....ONNNNNNO..T.",
+    "....ONMNNMNO..T.",
+    "....ONNNNNNO..T.",
+    "....ONNMMNNO..T.",
+    ".....ONNNNO...T.",
+    "......OPPO....T.",
+    "..OOOOOPPOOOOOT.",
+    ".BPPPPPPPPPPPPB."
+) + $dummy[10..23]
+
 
 # Colours shared by every wizard.
 $shared = @{
@@ -82,17 +128,23 @@ $shared = @{
     L = "#f4f4f4"   # gem highlight
 }
 
-# Per-wizard colours: H/J hat, R/Q robe, G gem.
-$variants = @{
-    wizard_blue = @{ H = "#3b5dc9"; J = "#29366f"; R = "#3b5dc9"; Q = "#29366f"; G = "#73eff7" }
-    wizard_red  = @{ H = "#b13e53"; J = "#5d275d"; R = "#b13e53"; Q = "#5d275d"; G = "#a7f070" }
+# Per-character frames and colours. Wizards: H/J hat, R/Q robe, G gem.
+# Dummy: N/M burlap, P post, R/W target, G crystal.
+$wizardFrames = [ordered]@{ "" = $wizard; "_cast" = $wizardCast }
+$characters = [ordered]@{
+    wizard_blue = @{ frames = $wizardFrames; colors = @{ H = "#3b5dc9"; J = "#29366f"; R = "#3b5dc9"; Q = "#29366f"; G = "#73eff7" } }
+    wizard_red  = @{ frames = $wizardFrames; colors = @{ H = "#b13e53"; J = "#5d275d"; R = "#b13e53"; Q = "#5d275d"; G = "#a7f070" } }
+    dummy       = @{ frames = [ordered]@{ "" = $dummy; "_cast" = $dummyCast }
+                     colors = @{ N = "#d8b47a"; M = "#9c7a4a"; P = "#8b5a2b"; R = "#e43b44"; W = "#f4f4f4"; G = "#e43b44" } }
 }
 
 $root = Split-Path -Parent $PSScriptRoot
 $outDir = Join-Path $root "assets\sprites"
-foreach ($name in $variants.Keys) {
+foreach ($name in $characters.Keys) {
     $palette = $shared.Clone()
-    foreach ($k in $variants[$name].Keys) { $palette[$k] = $variants[$name][$k] }
+    $colors = $characters[$name].colors
+    foreach ($k in $colors.Keys) { $palette[$k] = $colors[$k] }
+    $frames = $characters[$name].frames
 
     foreach ($suffix in $frames.Keys) {
         $grid = $frames[$suffix]

@@ -42,8 +42,7 @@
     "pickupRadius": 10
   },
   "stacking": {
-    "maxLevel": 3,
-    "repeatCap": 5
+    "maxLevel": 3
   },
   "round": {
     "countdown": 3

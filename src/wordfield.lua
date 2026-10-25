@@ -13,6 +13,8 @@ function WordField.new(data, arena)
     self.markers = nil -- { {x, y}, ... } while a wave is incoming
     self.waveTimer = 0
     self.enabled = true -- the self-test turns waves off to control the board
+    self.static = false -- training room: fixed tiles that never run out
+    self.events = {}    -- pickups this frame, for render feedback
     return self
 end
 
@@ -22,6 +24,14 @@ function WordField:start(tuning)
     self.words = {}
     self.markers = nil
     self.waveTimer = tuning.words.warning
+end
+
+-- Training room: lay out fixed tiles and turn waves off.
+function WordField:setStatic(words)
+    self.static = true
+    self.enabled = false
+    self.markers = nil
+    self.words = words
 end
 
 local function dist(ax, ay, bx, by)
@@ -90,6 +100,7 @@ end
 -- The wave's words are chosen when its markers appear (`warning` seconds
 -- before landing), so the marker count matches the word count.
 function WordField:update(dt, tuning, players, spellbooks, rand)
+    self.events = {}
     if not self.enabled then
         self:resolvePickups(tuning, players, spellbooks, rand)
         return
@@ -116,24 +127,32 @@ function WordField:update(dt, tuning, players, spellbooks, rand)
     self:resolvePickups(tuning, players, spellbooks, rand)
 end
 
--- A word goes to a touching player whose template has a matching open
--- blank; if both qualify, the closer one wins (random on an exact tie).
+-- A word goes to a touching player whose template can take it; if both
+-- qualify, the closer one wins (random on an exact tie). In a static field
+-- (training room) tiles stay put and only trigger when a player steps on
+-- them, not every frame they stand there.
 function WordField:resolvePickups(tuning, players, spellbooks, rand)
     local radius = tuning.words.pickupRadius
     for i = #self.words, 1, -1 do
         local word = self.words[i]
+        word.touching = word.touching or {}
         local best, bestDist = nil, math.huge
         for k, p in ipairs(players) do
             local d = dist(word.x, word.y, p.x, p.y)
-            if d <= radius and spellbooks[k]:canAccept(word.def) then
+            local touching = d <= radius
+            local fresh = touching and not (self.static and word.touching[k])
+            word.touching[k] = touching
+            if fresh and spellbooks[k]:canTake(word.def, tuning) then
                 if d < bestDist or (d == bestDist and rand(1, 2) == 1) then
                     best, bestDist = k, d
                 end
             end
         end
         if best then
-            table.remove(self.words, i)
-            spellbooks[best]:accept(word.def, tuning)
+            if not self.static then table.remove(self.words, i) end
+            -- For render: who took what, from where (cleared each update).
+            self.events[#self.events + 1] = { def = word.def, x = word.x, y = word.y, player = players[best] }
+            spellbooks[best]:take(word.def, tuning, rand)
         end
     end
 end

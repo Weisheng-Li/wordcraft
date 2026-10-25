@@ -74,7 +74,7 @@ Conditions go after `when`, and spells go after `cast`.
 | **shield** | Gives one **shield charge** that absorbs the next laser hit. | Lasts until the effect window ends (§8) |
 | **accelerate** | Boosts walking speed; **stacks**. Dash distance is unchanged. | +35% per stack, up to 3 stacks, until the effect window ends (§8) |
 
-**Laser telegraph (Decided):** an attack first shows a **thin, flashing red aim ray** toward the enemy for about `1 s`. The ray flashes faster just before firing. Then a **thick beam** fires and deals the damage. A truly instant, auto-aimed laser could only be avoided by already standing behind a wall. The telegraph gives the enemy time to **dash through it** (invulnerability) or **step behind a wall**, which is what makes dash and walls matter.
+**Laser telegraph (Decided):** an attack first shows a **thin, flashing aim ray in the caster's colour (blue or red)** toward the enemy for about `1 s`. The ray flashes faster just before firing. Then a **thick beam** fires and deals the damage. A truly instant, auto-aimed laser could only be avoided by already standing behind a wall. The telegraph gives the enemy time to **dash through it** (invulnerability) or **step behind a wall**, which is what makes dash and walls matter.
 - The aim line tracks the enemy during the telegraph, and line of sight is checked when the laser fires.
 - If a wall is in the way at that moment, the laser stops at the wall and does nothing.
 
@@ -136,7 +136,7 @@ Every status is drawn on the wizard, so both players can read it without looking
 
 | Status | How it shows |
 |---|---|
-| Shield charges | One cyan **ring** around the wizard per charge |
+| Shield charges | One cyan **ring** around the wizard per charge, up to 5. Above 5 it becomes **one bold ring with the count** (e.g. `x6`). Display only: there is no cap on charges. |
 | Accelerate | **Speed lines** trailing behind, two more per stack |
 | Armed trap | A cyan **rune circle** turning on the floor under the wizard. The HUD also names its condition, e.g. `trap: hit > shield`. |
 | Casting | **Casting pose** (see below) |
@@ -146,7 +146,7 @@ Every status is drawn on the wizard, so both players can read it without looking
 
 ### Casting pose
 
-While the staff is raised, and while any of the player's lasers is still charging, that wizard switches to a **casting frame**: they turn to face the opponent with the **staff raised overhead**. The staff lowers between the raises of a `repeat`. **Each charging attack has its own red orb**: the first on the staff gem, extra ones in a volley arcing over the head. Each orb grows over the 1 s aim and flashes just before its beam fires, and each aim ray and beam starts at its orb, so you can count the incoming shots and see who is attacking. A raise without an attack shows a small gold glint on the gem.
+While the staff is raised, and while any of the player's lasers is still charging, that wizard switches to a **casting frame**: they turn to face the opponent with the **staff raised overhead**. The staff lowers between the raises of a `repeat`. **Each charging attack has its own orb in the caster's colour**: the first on the staff gem, extra ones in a volley arcing over the head. Each orb grows over the 1 s aim and flashes just before its beam fires, and each aim ray and beam starts at its orb, so you can count the incoming shots and see who is attacking. A raise without an attack shows a small gold glint on the gem.
 
 ### Template stacking — Decided (numbers Proposed)
 
@@ -160,8 +160,8 @@ When a template **times out**, the next template **stacks onto it** instead of r
 **Merge rules.** Every template, single or stacked, has the shape `when <conditions>, repeat <N>: cast <spells>`, where the `when` and `repeat` parts are optional.
 - Words already collected **stay filled**.
 - Condition blanks pile up and are joined with **or**: the trap fires when *any* of them is true.
-- Spell blanks pile up into one list: `cast [a], [b] and [c]`. All of them are cast together.
-- Repeat counts **add**, capped at `5`: `repeat 2` + `repeat 4` → `repeat 5`. Without the cap, two stacked repeats could end a round in one cast.
+- Spell blanks pile up into one list: `cast [a], [b] and [c]`. All of them are cast together. (Exception: a second repeat adds no blank; see below.)
+- **Two repeats:** the counts **add up** and the second repeat's spell blank is **dropped**: `repeat 5: cast a` + `repeat 5` → `repeat 10: cast a`. Three stacked repeats reach at most `repeat 15`. That keeps stacking a trade-off: another repeat gives **more casts of the same spells**, while `and` gives **more spells per cast**. If the second repeat also added a blank, repeat + repeat would be strictly stronger than repeat + `and`. Big repeats are slow: every raise has its own 1 s aim, so a long stream gives the target time to find cover, and any raises left over are cancelled when the next template ends (§8).
 - Example: `when ___, cast ___` + `repeat 3: cast ___` → `when ___, repeat 3: cast ___ and ___`.
 - Blanks are filled left to right: conditions first, then spells.
 
@@ -187,6 +187,7 @@ Words arrive in **waves**.
 - Touching a word picks it up **only if it fits an empty blank** in your template, filling the **leftmost** matching blank. Otherwise the word stays on the map, available to the other player.
 - **Ties (Proposed):** if both players touch the same word on the same frame, the closer player gets it; if they're equally close, it's random.
 - **Denial is intended:** both templates are visible, so grabbing a word your opponent needs is a deliberate strategy.
+- **Pickup feedback (Decided):** when a word is picked up, a copy of its tile flies to the picker's head and shrinks, and a ring in the picker's colour (blue or red) bursts where the word was. When both players rush the same word, it's obvious who got it.
 
 ## 10. Round flow — Decided
 
@@ -220,3 +221,38 @@ To follow the README rule that data lives in JSON:
 ## 13. Open questions
 
 - Is text readable at 320×180 with short labels, or should the resolution go up to 480×270? We'll decide once we've played it. (§11)
+
+## 14. Training room — Decided
+
+A sandbox for testing the UI and how templates and words combine. Later it can host a tutorial and give new players a safe place to experiment.
+
+- **Entering:** `F2` toggles between versus and the training room. There's no menu yet.
+- **One player** (P1 controls) against a **training dummy**.
+- **Tiles by category:** templates (`when`, `and`, `repeat`), spells, and conditions. **Only one category is on the floor at a time; `Space` switches to the next.** Tabs along the bottom of the arena show which one is showing. All categories share one grid (three columns; the first row stays in place, and conditions add a second row underneath), so switching never rearranges the tiles. With no template, the top-left template area says "pick up a template tile". The grey **reset** tile is always there. A tile that appears right under the player when switching counts as already stepped on, so switching never takes a word by accident. The `repeat` tile rolls a random N (2–5) each time you take it, as in versus. Tiles never run out: walking onto one takes a copy and leaves it in place. You have to step off a tile and back on to take it again.
+  - **Template tiles:** if you have no template, the tile becomes your template. If you already have one, it **stacks** onto it with the normal merge rules, up to the usual **max of 3**. At level 3, template tiles are refused.
+  - **Word tiles** fill blanks exactly as in versus.
+  - **Reset** clears your template and your active effect (shields, speed, trap, a repeat in progress).
+- **No timers:** templates never time out and no new templates are dealt. You build whatever you want.
+- **Step-by-step guide** in the right HUD panel. It teaches how to *build* a spell, so it reads both the template you hold (top left) and the tile tab on the floor (bottom). Each state has a title, up to two lines of instructions, and a **counter** set apart at the bottom in brighter text. Spell effects explain themselves, so there's no casting message. The guide doesn't mention `Space`; how to switch tabs will be hinted some other way. In order:
+  1. **Trap armed** (a trap is waiting and no new template has been picked up yet): it fires once, the moment its condition is true. Footer: "try it near the dummy".
+  2. **Templates tab → step 1**, for as long as you stay on that tab: up to 3 templates stack into one bigger spell. Counter: `templates 2/3`. At 3/3 it says the max is stacked and to fill the blanks.
+  3. **Word tab without a template → step 1:** pick up a template first, from the templates tab.
+  4. **Word tab with a template → step 2, fill the blanks:** "walk onto spells to fill the blanks" when the tab has what you need (mentioning the other tab if both kinds are needed), otherwise "you need conditions, from the conditions tab". Counter: `2 blanks left`.
+- **The dummy** stands behind a short wall. It has **infinite HP** and doesn't move. A thin red circle shows its range: step inside and it attacks you with a normal laser (same aim and casting pose) every few seconds. The wall lets you test line of sight, and the dummy lets you test traps like `when hit` or `when close`.
+- **The player can't lose** in training. Hits still show combat text, knockback and the hit flash, but HP doesn't drop.
+- The room's layout, item positions and dummy settings live in `data/training.json`.
+
+## 15. Ideas for later
+
+### Pickup takes time (from playtest: "grab everything" is too strong)
+
+Playtests showed that grabbing every word you can reach is the dominant strategy. Every word is useful, picking one up costs nothing, and speed snowballs because it lets you collect even faster. Waiting for a template to stack rarely pays off.
+
+**Idea:** a player must **stand on a word for about 0.6 s** to take it, shown as a filling ring around the word. **Getting hit or dashing interrupts it.**
+- Grabbing becomes a decision ("is this word worth standing still in the open for, while their staff is up?") instead of a reflex.
+- It blunts the speed snowball: accelerate helps you *reach* words but not *collect* them, so it shifts toward dodging and positioning.
+- It creates bait and punishment: a player picking up a word is a target, and may be about to trigger their own `I stand still` trap.
+
+Related options, if this isn't enough:
+- **Show the next wave's words early**, with labels on the markers about 3 s before they land, so players can plan routes and decide which words to contest or deny.
+- **Make stacking pay more than linearly:** each level above 1 adds a bonus raise.

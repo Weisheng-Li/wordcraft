@@ -22,6 +22,7 @@ function Player.new(id, x, y, sprite, tuning)
     self.knockX, self.knockY = 0, 0
     self.shield = 0            -- shield charges
     self.accelerate = 0        -- accelerate stacks (each adds accelerateBonus)
+    self.infiniteHp = false    -- training room: hits still land, HP never drops
     -- Per-frame events, read by conditions and cleared by Game at frame end.
     self.justDashed = false
     self.justHit = false
@@ -100,7 +101,7 @@ function Player:receiveHit(damage, fromX, fromY, tuning)
         self.shield = self.shield - 1
         return "blocked"
     end
-    self.hp = math.max(0, self.hp - damage)
+    if not self.infiniteHp then self.hp = math.max(0, self.hp - damage) end
     self.justHit = true
 
     local dx, dy = self.x - fromX, self.y - fromY

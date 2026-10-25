@@ -227,10 +227,12 @@ tests["stack: level 3 timeout starts over at level 1"] = function(g)
     for _, b in ipairs(book:blanks()) do assert(not b.word, "fresh template has no words") end
 end
 
-tests["stack: merged repeats add up to the cap"] = function(g)
+tests["stack: merged repeats add up"] = function(g)
     local t = g.data.tuning
     local m = Spellbook.merge(template(g, "repeat", 3), template(g, "repeat", 4), t)
-    assert(m.n == t.stacking.repeatCap, "n " .. tostring(m.n))
+    assert(m.n == 7 and #m.spells == 1, "repeat 3 + repeat 4 = repeat 7 with one spell blank")
+    m = Spellbook.merge(Spellbook.merge(template(g, "repeat", 5), template(g, "repeat", 5), t), template(g, "repeat", 5), t)
+    assert(m.n == 15 and #m.spells == 1, "three repeat 5s make repeat 15 with one spell blank")
     m = Spellbook.merge(template(g, "repeat", 2), template(g, "combo"), t)
     assert(m.n == 2 and #m.spells == 3)
 end
@@ -280,6 +282,16 @@ tests["staff lowers between repeat raises"] = function(g)
     assert(not book.casting, "sequence finished")
 end
 
+tests["round end clears incoming wave markers"] = function(g)
+    g.wordfield:start(g.data.tuning)
+    step(g, DT)
+    assert(g.wordfield.markers, "markers showing before the KO")
+    g.players[2].hp = 1
+    give(g, 1, "combo"); fill(g, 1, "attack", "shield")
+    fire(g)
+    assert(g.state == "over" and not g.wordfield.markers, "markers cleared")
+end
+
 tests["KO ends the round"] = function(g)
     g.players[2].hp = 1
     give(g, 1, "combo"); fill(g, 1, "attack", "shield")
@@ -301,6 +313,141 @@ tests["random play for 3 minutes doesn't crash"] = function(g)
     end
 end
 
+---------------------------------------------------------------- training room
+
+local function newTraining(data)
+    return Game.new(data, { width = W, height = H, rand = math.random, mode = "training" })
+end
+
+-- Find a tile by label, switching the floor's category until it shows.
+local function tile(g, label)
+    for _ = 1, #g.data.training.categories do
+        for _, w in ipairs(g.wordfield.words) do
+            if w.def.label == label then return w end
+        end
+        g:nextTrainingCategory()
+    end
+    error("no tile " .. label)
+end
+
+-- Step onto a tile for one frame, then off it again.
+local function touch(g, label)
+    local p, t = g.players[1], tile(g, label)
+    p.x, p.y = t.x, t.y
+    step(g, DT)
+    p.x, p.y = t.x + 24, t.y -- step off sideways, into the gap between tiles
+    step(g, DT)
+end
+
+local trainingTests = {}
+
+trainingTests["training: template tiles start and stack to the max, then refuse"] = function(g)
+    local book = g.spellbooks[1]
+    assert(not book.template, "starts empty")
+    touch(g, "when")
+    assert(book.template and book.template.level == 1)
+    touch(g, "repeat")
+    local n = book.template.n
+    assert(book.template.level == 2 and n >= 2 and n <= 5, "random repeat 2-5, got " .. tostring(n))
+    touch(g, "and")
+    assert(book.template.level == 3)
+    touch(g, "when")
+    assert(book.template.level == 3 and book.template.n == n, "4th template refused")
+end
+
+trainingTests["training: tiles stay, and only trigger when stepped onto"] = function(g)
+    local book = g.spellbooks[1]
+    touch(g, "and")
+    local p, t = g.players[1], tile(g, "attack")
+    p.x, p.y = t.x, t.y
+    step(g, 0.5) -- stand on it for many frames
+    assert(book.template.spells[1].word == "attack" and not book.template.spells[2].word, "one pickup per step")
+    assert(tile(g, "attack"), "tile still there")
+    p.x = t.x + 24; step(g, DT); p.x = t.x; step(g, DT)
+    assert(not book.template, "second step completed the template")
+end
+
+trainingTests["training: reset clears template and effects"] = function(g)
+    local book, p = g.spellbooks[1], g.players[1]
+    touch(g, "and"); touch(g, "shield"); touch(g, "shield")
+    step(g, 2)
+    assert(p.shield == 2)
+    touch(g, "when"); touch(g, "close")
+    touch(g, "reset")
+    assert(not book.template and p.shield == 0)
+end
+
+trainingTests["training: no timeouts and no dealing"] = function(g)
+    local book = g.spellbooks[1]
+    step(g, g.data.tuning.templates.timeout + 1)
+    assert(not book.template, "nothing dealt")
+    touch(g, "and")
+    step(g, g.data.tuning.templates.timeout + 1)
+    assert(book.template and book.template.level == 1, "no timeout stacking")
+end
+
+trainingTests["training: dummy fires only in range; nobody can lose"] = function(g)
+    local d, p = g.players[2], g.players[1]
+    local cfg = g.data.training.dummy
+    p.x, p.y = d.x - cfg.range - 20, d.y - 40
+    step(g, 3)
+    assert(#g.lasers == 0 and #g.beams == 0, "no shots out of range")
+    p.x, p.y = d.x - cfg.range + 10, d.y - 24
+    step(g, DT)
+    assert(#g.lasers == 1 and g.lasers[1].caster == d, "dummy fires in range")
+    for _ = 1, 20 do
+        p.x, p.y = d.x - 30, d.y - 24
+        step(g, cfg.cooldown)
+    end
+    assert(p.hp == g.data.tuning.player.hp and g.state == "fight", "infinite hp")
+    touch(g, "and"); touch(g, "attack"); touch(g, "attack")
+    local _, y = g.arena:tileCenter(17, 7)
+    p.x, p.y = d.x - 20, y -- clear shot, below the wall
+    step(g, g.data.tuning.spells.telegraph + 0.1)
+    assert(d.hp == g.data.tuning.player.hp and g.state == "fight", "dummy can't die")
+end
+
+trainingTests["training: space cycles one category at a time; reset always shows"] = function(g)
+    local cats = g.data.training.categories
+    local function types()
+        local set = {}
+        for _, w in ipairs(g.wordfield.words) do set[w.def.type] = true end
+        return set
+    end
+    for i = 1, #cats do
+        assert(g.trainingCategory == i)
+        local set = types()
+        assert(set[cats[i].type] and set.reset, "category " .. i .. " shows its tiles and reset")
+        for _, c in ipairs(cats) do
+            if c ~= cats[i] then assert(not set[c.type], "only one category on the floor") end
+        end
+        g:nextTrainingCategory()
+    end
+    assert(g.trainingCategory == 1, "wraps around")
+end
+
+trainingTests["training: a tile appearing under the player isn't taken"] = function(g)
+    local book, p = g.spellbooks[1], g.players[1]
+    touch(g, "and")
+    local t = tile(g, "attack") -- switches to spells
+    for _ = 1, #g.data.training.categories - 1 do g:nextTrainingCategory() end -- back off spells
+    p.x, p.y = t.x, t.y
+    step(g, DT)
+    g:showTrainingCategory(2) -- spells appear right under the player
+    step(g, DT)
+    assert(not book.template.spells[1].word, "not taken by switching")
+end
+
+trainingTests["pickups record who took the word"] = function(g)
+    touch(g, "when")
+    local p, t = g.players[1], tile(g, "far")
+    p.x, p.y = t.x, t.y
+    step(g, DT)
+    local e = g.wordfield.events[1]
+    assert(e and e.def.id == "far" and e.player == p, "event recorded")
+    step(g, DT)
+    assert(#g.wordfield.events == 0, "events last one frame")
+end
 -- Sample scene for `--shot` screenshots: stacked templates, shields, a trap.
 function SelfTest.showcase(g)
     local t = g.data.tuning
@@ -310,7 +457,7 @@ function SelfTest.showcase(g)
     b1.template.spells[2].word = "attack"
     b2.template = Spellbook.merge(template(g, "combo"), template(g, "repeat", 2), t)
     b2.template.spells[1].word = "shield"
-    g.players[2].shield = 4
+    g.players[2].shield = 9
     g.players[1].accelerate = 2
     g.players[1].dashCooldown = t.dash.cooldown * 0.4
     b1.trap = { conditions = { "hit" }, spells = { "shield" }, n = 1 }
@@ -319,17 +466,37 @@ function SelfTest.showcase(g)
     for _ = 1, 3 do g:castSpell(g.players[1], "attack") end
 end
 
+-- Sample scene for `--shot-training`: a stacked template, the player inside
+-- the dummy's range (so it starts firing), and a pickup in flight.
+function SelfTest.showcaseTraining(g)
+    local t = g.data.tuning
+    local book, p, d = g.spellbooks[1], g.players[1], g.players[2]
+    book:take(tile(g, "when").def, t, math.random)
+    book:take(tile(g, "repeat").def, t, math.random)
+    book:take(tile(g, "close").def, t, math.random)
+    tile(g, "when") -- back to the templates tab: step 1 with the stack count
+    p.x, p.y = d.x - 40, d.y + 26
+    local w
+    for _, tl in ipairs(g.wordfield.words) do if tl.def.label == "when" then w = tl end end
+    g.wordfield.events = { { def = w.def, x = p.x - 30, y = p.y - 10, player = p } }
+end
+
 function SelfTest.run(data)
-    local names = {}
-    for name in pairs(tests) do names[#names + 1] = name end
-    table.sort(names)
-    local failed = 0
-    for _, name in ipairs(names) do
-        local ok, err = pcall(tests[name], newFight(data))
-        print((ok and "PASS  " or "FAIL  ") .. name .. (ok and "" or ("\n      " .. tostring(err))))
-        if not ok then failed = failed + 1 end
+    local suites = { { tests, newFight }, { trainingTests, newTraining } }
+    local total, failed = 0, 0
+    for _, suite in ipairs(suites) do
+        local list, make = suite[1], suite[2]
+        local names = {}
+        for name in pairs(list) do names[#names + 1] = name end
+        table.sort(names)
+        for _, name in ipairs(names) do
+            local ok, err = pcall(list[name], make(data))
+            print((ok and "PASS  " or "FAIL  ") .. name .. (ok and "" or ("\n      " .. tostring(err))))
+            total = total + 1
+            if not ok then failed = failed + 1 end
+        end
     end
-    print(string.format("%d/%d passed", #names - failed, #names))
+    print(string.format("%d/%d passed", total - failed, total))
     return failed == 0
 end
 

@@ -2,7 +2,9 @@
 -- Rendering happens at a fixed low resolution, then gets scaled up by an
 -- integer factor so pixels stay crisp.
 --
--- Debug flags (after the game folder):  love . --selftest   love . --shot
+-- Debug flags (after the game folder):
+--   love . --selftest   love . --shot   love . --shot-training
+-- Keys: F2 toggles the training room (Space switches its tiles), F5 reloads code and data.
 
 local json = require("src.json")
 local Game = require("src.game")
@@ -24,6 +26,7 @@ local sprites = {}
 local dashPressed = { false, false }
 local time = 0
 local shotAt -- --shot: capture the canvas at this time, then quit
+local mode = "versus" -- F2 toggles the training room
 local showcased = false
 
 local function loadJson(path)
@@ -44,8 +47,13 @@ local function loadData()
         tuning = loadJson("data/tuning.json"),
         arena = loadJson("data/arena.json"),
         templates = loadJson("data/templates.json").templates,
+        training = loadJson("data/training.json"),
         words = { list = words, byId = byId, byType = byType },
     }
+end
+
+local function newGame()
+    game = Game.new(data, { width = GAME_W, height = GAME_H, rand = math.random, mode = mode })
 end
 
 function love.load(args)
@@ -57,6 +65,8 @@ function love.load(args)
             local ok = require("src.selftest").run(data)
             love.event.quit(ok and 0 or 1)
             return
+        elseif a == "--shot-training" then
+            shotAt, mode, showcased = 2.5, "training", "training"
         elseif a == "--shot" then
             shotAt = 3.85
         end
@@ -65,12 +75,12 @@ function love.load(args)
     love.graphics.setDefaultFilter("nearest", "nearest")
     canvas = love.graphics.newCanvas(GAME_W, GAME_H)
     Render.load()
-    for _, name in ipairs({ "wizard_blue", "wizard_red" }) do
+    for _, name in ipairs({ "wizard_blue", "wizard_red", "dummy" }) do
         sprites[name] = love.graphics.newImage("assets/sprites/" .. name .. ".png")
         sprites[name .. "_cast"] = love.graphics.newImage("assets/sprites/" .. name .. "_cast.png")
     end
 
-    game = Game.new(data, { width = GAME_W, height = GAME_H, rand = math.random })
+    newGame()
 end
 
 local function readInput(k)
@@ -91,12 +101,20 @@ function love.update(dt)
     dt = math.min(dt, 1 / 30) -- avoid huge steps after a window drag/stall
     time = time + dt
     game:update(dt, { readInput(1), readInput(2) })
-    Render.update(dt, game)
 
+    -- Screenshot sample scenes run between the game and render updates so
+    -- render sees anything they inject (e.g. a pickup event).
+    if showcased == "training" and time >= 2.35 then
+        require("src.selftest").showcaseTraining(game)
+        showcased = true
+    end
     if shotAt and not showcased and game.state == "fight" then
         require("src.selftest").showcase(game)
         showcased = true
     end
+
+    Render.update(dt, game)
+
     if shotAt and time >= shotAt then
         love.graphics.setCanvas(canvas)
         Render.draw(game, sprites, time)
@@ -127,9 +145,15 @@ end
 function love.keypressed(key)
     if key == "escape" then love.event.quit() end
     if key == "f5" then love.event.quit("restart") end -- reloads code and data from disk
+    if key == "f2" then
+        mode = (mode == "versus") and "training" or "versus"
+        newGame()
+        return
+    end
     if not game then return end
     for k, c in ipairs(CONTROLS) do
         if key == c.dash then dashPressed[k] = true end
     end
     if key == "r" and game.state == "over" then game:reset() end
+    if key == "space" and game.mode == "training" then game:nextTrainingCategory() end
 end
