@@ -61,24 +61,60 @@ function Arena:boxHitsWall(x, y, w, h)
     return false
 end
 
--- Move a box by (dx, dy), one axis at a time, stopping at walls.
--- Sub-steps keep fast moves (dashes) from tunnelling through a tile.
--- Returns new x, y and whether movement was blocked.
-function Arena:moveBox(x, y, dx, dy, w, h)
-    local steps = math.max(1, math.ceil(math.max(math.abs(dx), math.abs(dy)) / 2))
-    local sx, sy = dx / steps, dy / steps
-    local blocked = false
-    for _ = 1, steps do
-        if sx ~= 0 then
-            if self:boxHitsWall(x + sx, y, w, h) then blocked = true; sx = 0
-            else x = x + sx end
+-- If a box at (x, y) can't move by `step` along one axis, look for the
+-- nearest gap within `nudge` pixels along the other axis and return the
+-- sideways shift toward it (at most |step| per call), or 0. A tie (open on
+-- both sides equally) gives 0: that's walking into the middle of a wall.
+local function cornerShift(self, x, y, w, h, step, nudge, alongX)
+    for off = 1, nudge do
+        local freeA, freeB
+        if alongX then
+            freeA = not self:boxHitsWall(x + step, y - off, w, h) and not self:boxHitsWall(x, y - off, w, h)
+            freeB = not self:boxHitsWall(x + step, y + off, w, h) and not self:boxHitsWall(x, y + off, w, h)
+        else
+            freeA = not self:boxHitsWall(x - off, y + step, w, h) and not self:boxHitsWall(x - off, y, w, h)
+            freeB = not self:boxHitsWall(x + off, y + step, w, h) and not self:boxHitsWall(x + off, y, w, h)
         end
-        if sy ~= 0 then
-            if self:boxHitsWall(x, y + sy, w, h) then blocked = true; sy = 0
-            else y = y + sy end
+        if freeA ~= freeB then
+            local amount = math.min(off, math.abs(step))
+            return freeA and -amount or amount
+        elseif freeA then
+            return 0
         end
     end
-    return x, y, blocked
+    return 0
+end
+
+-- Move a box by (dx, dy), one axis at a time, stopping at walls.
+-- Sub-steps keep fast moves (dashes) from tunnelling through a tile.
+-- With `nudge` > 0, clipping a wall corner by up to that many pixels
+-- slides the box around it instead of stopping (corner correction).
+-- Returns the new x, y and whether each axis was hard-blocked (stopped
+-- with no way around).
+function Arena:moveBox(x, y, dx, dy, w, h, nudge)
+    nudge = nudge or 0
+    local steps = math.max(1, math.ceil(math.max(math.abs(dx), math.abs(dy)) / 2))
+    local sx, sy = dx / steps, dy / steps
+    local hardX, hardY = false, false
+    for _ = 1, steps do
+        if sx ~= 0 then
+            if not self:boxHitsWall(x + sx, y, w, h) then
+                x = x + sx
+            else
+                local shift = nudge > 0 and cornerShift(self, x, y, w, h, sx, nudge, true) or 0
+                if shift ~= 0 then y = y + shift else hardX = true; sx = 0 end
+            end
+        end
+        if sy ~= 0 then
+            if not self:boxHitsWall(x, y + sy, w, h) then
+                y = y + sy
+            else
+                local shift = nudge > 0 and cornerShift(self, x, y, w, h, sy, nudge, false) or 0
+                if shift ~= 0 then x = x + shift else hardY = true; sy = 0 end
+            end
+        end
+    end
+    return x, y, hardX, hardY
 end
 
 -- Walk the floor-plane segment; returns true if clear, or false plus the

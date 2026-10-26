@@ -81,6 +81,7 @@ function Game:reset()
     -- start/stop as the baseline. Make it the same for both once decided.
     self.players[1].smoothMovement = true
     self.players[1].movementFx = true
+    self.players[1].cornerCorrection = true
 
     local cast = function(caster, spell) self:castSpell(caster, spell) end
     self.spellbooks = {

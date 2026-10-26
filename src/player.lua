@@ -26,6 +26,7 @@ function Player.new(id, x, y, sprite, tuning)
     self.vx, self.vy = 0, 0    -- walking velocity
     self.smoothMovement = false -- ease in/out instead of instant start/stop (A/B test)
     self.movementFx = false    -- walk cycle + dust puffs, drawn by render (A/B test)
+    self.cornerCorrection = false -- slide around wall corners you barely clip (A/B test)
     -- Per-frame events, read by conditions and cleared by Game at frame end.
     self.justDashed = false
     self.justHit = false
@@ -99,12 +100,14 @@ function Player:update(dt, input, tuning, arena)
     end
 
     if dx ~= 0 or dy ~= 0 then
-        local ox, oy = self.x, self.y
-        self.x, self.y = arena:moveBox(self.x, self.y - h / 2, dx, dy, w, h)
+        local nudge = self.cornerCorrection and t.movement.cornerNudge or 0
+        local hardX, hardY
+        self.x, self.y, hardX, hardY = arena:moveBox(self.x, self.y - h / 2, dx, dy, w, h, nudge)
         self.y = self.y + h / 2
         -- A wall stops velocity on that axis, so we don't push into it.
-        if math.abs((self.x - ox) - dx) > 0.01 then self.vx = 0 end
-        if math.abs((self.y - oy) - dy) > 0.01 then self.vy = 0 end
+        -- (Sliding around a corner keeps it.)
+        if hardX then self.vx = 0 end
+        if hardY then self.vy = 0 end
     end
 
     if moved then self.stillTime = 0 else self.stillTime = self.stillTime + dt end

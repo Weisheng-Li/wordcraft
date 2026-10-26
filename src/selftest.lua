@@ -352,6 +352,24 @@ tests["instant movement stays instant (baseline)"] = function(g)
     assert(p.vx == 0, "stops on the first frame")
 end
 
+tests["corner correction slides past a barely-clipped corner"] = function(g)
+    local a, nudge = g.arena, g.data.tuning.movement.cornerNudge
+    -- Wall tile at col 4, row 2 spans x 48..64. Walk up into its bottom
+    -- edge with the 10 px box overlapping its left corner by `overlap`.
+    local function walkUp(overlap, n)
+        local x = 48 + overlap - 5
+        local y = a.top + 2 * a.tile + 4 -- just below the tile
+        local nx, ny, _, hardY = a:moveBox(x, y, 0, -12, 10, 6, n)
+        return nx, ny, hardY, x, y
+    end
+    local nx, ny, hardY, x0, y0 = walkUp(2, 0)
+    assert(hardY and ny == y0 and nx == x0, "no nudge: stuck on the corner")
+    nx, ny, hardY = walkUp(2, nudge)
+    assert(not hardY and ny < y0 - 4 and nx + 5 <= 48, "nudge: slid left of the corner and kept going")
+    nx, ny, hardY = walkUp(nudge + 2, nudge)
+    assert(hardY and ny == y0, "bigger overlap than the nudge: blocked")
+end
+
 tests["KO ends the round"] = function(g)
     g.players[2].hp = 1
     give(g, 1, "combo"); fill(g, 1, "attack", "shield")

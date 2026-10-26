@@ -7,7 +7,8 @@
   },
   "movement": {
     "accelTime": 0.07,
-    "decelTime": 0.05
+    "decelTime": 0.05,
+    "cornerNudge": 4
   },
   "dash": {
     "distance": 48,
