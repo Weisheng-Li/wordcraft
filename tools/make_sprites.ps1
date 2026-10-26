@@ -67,6 +67,16 @@ $wizardCast = @(
     "..OOOOO.OOOOO..."
 )
 
+# Walk cycle, 16x24: same body as idle; only the feet (rows 21-23) change.
+# Stride (feet apart) -> passing (feet together) -> stride -> passing.
+$hem = ".OBBBBBBBBBBO.T."  # hem stays put; only the feet move
+$strideFeet  = @(".OKKO....OKKO.T.", ".OKKKO...OKKKOT.", ".OOOOO...OOOOO..")
+$passingFeet = @("....OKKKKO....T.", "....OKKKKKO...T.", "....OOOOOOO.....")
+$wizardWalk1 = $wizard[0..19] + @($hem) + $strideFeet
+$wizardWalk2 = $wizard[0..19] + @($hem) + $passingFeet
+$wizardWalk3 = $wizard[0..19] + @($hem) + $strideFeet
+$wizardWalk4 = $wizard[0..19] + @($hem) + $passingFeet
+
 # Training dummy, 16x24: sack head, crossbar arms with straw ends, target
 # on the chest, post and base. M = dark burlap (stitches).
 $dummy = @(
@@ -130,7 +140,8 @@ $shared = @{
 
 # Per-character frames and colours. Wizards: H/J hat, R/Q robe, G gem.
 # Dummy: N/M burlap, P post, R/W target, G crystal.
-$wizardFrames = [ordered]@{ "" = $wizard; "_cast" = $wizardCast }
+$wizardFrames = [ordered]@{ "" = $wizard; "_cast" = $wizardCast;
+    "_walk1" = $wizardWalk1; "_walk2" = $wizardWalk2; "_walk3" = $wizardWalk3; "_walk4" = $wizardWalk4 }
 $characters = [ordered]@{
     wizard_blue = @{ frames = $wizardFrames; colors = @{ H = "#3b5dc9"; J = "#29366f"; R = "#3b5dc9"; Q = "#29366f"; G = "#73eff7" } }
     wizard_red  = @{ frames = $wizardFrames; colors = @{ H = "#b13e53"; J = "#5d275d"; R = "#b13e53"; Q = "#5d275d"; G = "#a7f070" } }

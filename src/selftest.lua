@@ -520,6 +520,7 @@ function SelfTest.showcase(g)
     g.players[2].shield = 9
     g.players[1].accelerate = 2
     g.players[1].dashCooldown = t.dash.cooldown * 0.4
+    g.players[1].dashTime, g.players[1].dashX, g.players[1].dashY = 0.1, 1, 0 -- exercises dust puffs
     b1.trap = { conditions = { "hit" }, spells = { "shield" }, n = 1 }
     local _, y = g.arena:tileCenter(1, 3) -- open row, clear line of sight
     g.players[1].y, g.players[2].y = y, y

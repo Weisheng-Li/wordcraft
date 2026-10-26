@@ -73,6 +73,78 @@ local function typeColor(wordType)
     return C[TYPE_COLOR[wordType] or "condition"]
 end
 
+-- Movement juice (players with movementFx): a 4-frame walk cycle whose pace
+-- follows speed, and dust puffs when starting to move, turning sharply,
+-- or dashing. Purely visual state, kept here rather than in game logic.
+local STRIDE = 28         -- pixels travelled per full walk cycle (4 frames)
+local DUST_TIME = 0.35
+local walkPhase = { 0, 0 }
+local lastMove = {}       -- per player: { speed, dirX, dirY, dashing }
+local dust = {}           -- { x, y, vx, vy, age, r }
+
+local function puff(x, y, dirX, dirY, count)
+    for i = 1, count do
+        local a = math.atan2(dirY, dirX) + (i - (count + 1) / 2) * 0.6
+        dust[#dust + 1] = {
+            x = x, y = y - 1, age = 0, r = 1 + (i % 2),
+            vx = math.cos(a) * 18, vy = math.sin(a) * 10 - 4,
+        }
+    end
+end
+
+local function updateMovementFx(dt, game)
+    for k, p in ipairs(game.players) do
+        if p.movementFx then
+            local speed = math.sqrt(p.vx * p.vx + p.vy * p.vy)
+            local dashing = p:isDashing()
+            local dirX, dirY = 0, 0
+            if speed > 0 then dirX, dirY = p.vx / speed, p.vy / speed end
+            local last = lastMove[k] or { speed = 0, dirX = 0, dirY = 0, dashing = false }
+
+            if dashing and not last.dashing then
+                puff(p.x, p.y, -p.dashX, -p.dashY, 4)          -- kicked up behind the dash
+            elseif not dashing and speed > 10 then
+                if last.speed <= 10 then
+                    puff(p.x, p.y, -dirX, -dirY, 2)              -- starting off
+                elseif dirX * last.dirX + dirY * last.dirY < 0 then
+                    puff(p.x, p.y, -dirX, -dirY, 3)              -- sharp turn
+                end
+            end
+
+            if speed > 10 and not dashing then
+                walkPhase[k] = walkPhase[k] + speed * dt / STRIDE
+            else
+                walkPhase[k] = 0
+            end
+            lastMove[k] = { speed = speed, dirX = dirX, dirY = dirY, dashing = dashing }
+        end
+    end
+    for i = #dust, 1, -1 do
+        local d = dust[i]
+        d.age = d.age + dt
+        d.x, d.y = d.x + d.vx * dt, d.y + d.vy * dt
+        d.vx, d.vy = d.vx * 0.9, d.vy * 0.9
+        if d.age >= DUST_TIME then table.remove(dust, i) end
+    end
+end
+
+-- Walk cycle frame for p (1-4), or nil when standing, dashing or without
+-- walk frames. The frame advances with distance walked, so faster walking
+-- steps faster.
+local function walkFrame(p, sprites)
+    if not p.movementFx or walkPhase[p.id] == 0 then return nil end
+    local name = p.sprite .. "_walk" .. (math.floor(walkPhase[p.id] * 4) % 4 + 1)
+    return sprites[name] and name or nil
+end
+
+local function drawDust()
+    for _, d in ipairs(dust) do
+        local k = d.age / DUST_TIME
+        setColor(C.dim, 0.7 * (1 - k))
+        love.graphics.circle("fill", d.x, d.y, d.r + k * 1.5)
+    end
+end
+
 local function printCentered(text, font, cx, y)
     love.graphics.setFont(font)
     love.graphics.print(text, math.floor(cx - font:getWidth(text) / 2), math.floor(y))
@@ -169,7 +241,8 @@ end
 local function drawPlayer(game, p, sprites, time)
     local tuning = game.data.tuning
     local casting = isCasting(game, p)
-    local img = sprites[casting and (p.sprite .. "_cast") or p.sprite]
+    local walk = not casting and walkFrame(p, sprites)
+    local img = sprites[casting and (p.sprite .. "_cast") or walk or p.sprite]
     local w, h = img:getDimensions()
     local facing = casting and castFacing(game, p) or p.facing
 
@@ -183,6 +256,7 @@ local function drawPlayer(game, p, sprites, time)
     else
         love.graphics.setColor(1, 1, 1, alpha)
     end
+
     love.graphics.draw(img, math.floor(p.x), math.floor(p.y), 0, facing, 1, w / 2, h)
 
     -- One charging orb per laser: grows with the aim, flashes before firing.
@@ -307,6 +381,8 @@ local function drawWorld(game, sprites, time)
     drawFloor(arena)
 
     local wf = game.wordfield
+    drawDust()
+
     if wf.markers then
         for _, m in ipairs(wf.markers) do drawMarker(m, time) end
     end
@@ -698,6 +774,7 @@ function drawFloaters()
 end
 
 function Render.update(dt, game)
+    updateMovementFx(dt, game)
     spawnFloaters(game)
     spawnPickups(game)
     for i = #pickups, 1, -1 do

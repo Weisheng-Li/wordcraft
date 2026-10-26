@@ -25,6 +25,7 @@ function Player.new(id, x, y, sprite, tuning)
     self.infiniteHp = false    -- training room: hits still land, HP never drops
     self.vx, self.vy = 0, 0    -- walking velocity
     self.smoothMovement = false -- ease in/out instead of instant start/stop (A/B test)
+    self.movementFx = false    -- walk cycle + dust puffs, drawn by render (A/B test)
     -- Per-frame events, read by conditions and cleared by Game at frame end.
     self.justDashed = false
     self.justHit = false

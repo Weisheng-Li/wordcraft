@@ -78,6 +78,10 @@ function love.load(args)
     for _, name in ipairs({ "wizard_blue", "wizard_red", "dummy" }) do
         sprites[name] = love.graphics.newImage("assets/sprites/" .. name .. ".png")
         sprites[name .. "_cast"] = love.graphics.newImage("assets/sprites/" .. name .. "_cast.png")
+        for f = 1, 4 do -- walk cycle (wizards only)
+            local path = "assets/sprites/" .. name .. "_walk" .. f .. ".png"
+            if love.filesystem.getInfo(path) then sprites[name .. "_walk" .. f] = love.graphics.newImage(path) end
+        end
     end
 
     newGame()
