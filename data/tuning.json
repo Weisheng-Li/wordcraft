@@ -5,6 +5,10 @@
     "hitboxW": 10,
     "hitboxH": 6
   },
+  "movement": {
+    "accelTime": 0.07,
+    "decelTime": 0.05
+  },
   "dash": {
     "distance": 48,
     "duration": 0.15,

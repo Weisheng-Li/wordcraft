@@ -77,6 +77,9 @@ function Game:reset()
         Player.new(2, s2.x, s2.y, training and "dummy" or "wizard_red", t),
     }
     self.players[2].facing = -1
+    -- A/B test: blue eases in and out of movement, red keeps instant
+    -- start/stop as the baseline. Make it the same for both once decided.
+    self.players[1].smoothMovement = true
 
     local cast = function(caster, spell) self:castSpell(caster, spell) end
     self.spellbooks = {

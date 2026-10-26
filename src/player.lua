@@ -23,6 +23,8 @@ function Player.new(id, x, y, sprite, tuning)
     self.shield = 0            -- shield charges
     self.accelerate = 0        -- accelerate stacks (each adds accelerateBonus)
     self.infiniteHp = false    -- training room: hits still land, HP never drops
+    self.vx, self.vy = 0, 0    -- walking velocity
+    self.smoothMovement = false -- ease in/out instead of instant start/stop (A/B test)
     -- Per-frame events, read by conditions and cleared by Game at frame end.
     self.justDashed = false
     self.justHit = false
@@ -67,11 +69,22 @@ function Player:update(dt, input, tuning, arena)
         dx, dy = self.dashX * speed * step, self.dashY * speed * step
         self.dashTime = self.dashTime - dt
         moved = true
+        if not self:isDashing() then
+            -- Come out of the dash at walking speed instead of a dead stop.
+            local walk = t.player.moveSpeed * (1 + self.accelerate * t.spells.accelerateBonus)
+            self.vx, self.vy = self.dashX * walk, self.dashY * walk
+        end
     else
         local speed = t.player.moveSpeed
         speed = speed * (1 + self.accelerate * t.spells.accelerateBonus)
-        dx, dy = ix * speed * dt, iy * speed * dt
-        moved = len > 0
+        local tx, ty = ix * speed, iy * speed
+        if self.smoothMovement then
+            self:steer(tx, ty, speed, dt, t.movement)
+        else
+            self.vx, self.vy = tx, ty
+        end
+        dx, dy = self.vx * dt, self.vy * dt
+        moved = len > 0 or (self.vx * self.vx + self.vy * self.vy) > 1
     end
 
     -- Hit knockback adds on top of walking/dashing. It doesn't count as
@@ -85,11 +98,38 @@ function Player:update(dt, input, tuning, arena)
     end
 
     if dx ~= 0 or dy ~= 0 then
+        local ox, oy = self.x, self.y
         self.x, self.y = arena:moveBox(self.x, self.y - h / 2, dx, dy, w, h)
         self.y = self.y + h / 2
+        -- A wall stops velocity on that axis, so we don't push into it.
+        if math.abs((self.x - ox) - dx) > 0.01 then self.vx = 0 end
+        if math.abs((self.y - oy) - dy) > 0.01 then self.vy = 0 end
     end
 
     if moved then self.stillTime = 0 else self.stillTime = self.stillTime + dt end
+end
+
+-- Ease velocity toward the target (tx, ty) instead of snapping to it:
+-- reach full speed in accelTime and stop in decelTime. Pushing against
+-- the current motion drops it at once, so turning around feels like a
+-- fresh start rather than a slow skid.
+function Player:steer(tx, ty, speed, dt, m)
+    local vx, vy = self.vx, self.vy
+    local time
+    if tx == 0 and ty == 0 then
+        time = m.decelTime
+    else
+        if vx * tx + vy * ty < 0 then vx, vy = 0, 0 end
+        time = m.accelTime
+    end
+    local rate = speed / math.max(time, 0.001) * dt
+    local ex, ey = tx - vx, ty - vy
+    local gap = math.sqrt(ex * ex + ey * ey)
+    if gap <= rate then
+        self.vx, self.vy = tx, ty
+    else
+        self.vx, self.vy = vx + ex / gap * rate, vy + ey / gap * rate
+    end
 end
 
 -- Apply a laser hit coming from (fromX, fromY).

@@ -296,6 +296,7 @@ tests["accelerate stacks up to the cap and speeds up walking"] = function(g)
     give(g, 1, "repeat", 5); fill(g, 1, "accelerate")
     step(g, 5 * t.spells.raiseTime + 4 * t.spells.repeatGap + 0.1)
     assert(p.accelerate == t.spells.accelerateMaxStacks, "stacks " .. p.accelerate)
+    step(g, 0.2, { { x = 1, y = 0, dash = false }, IDLE }) -- get past any speed ramp
     local x0 = p.x
     step(g, 0.5, { { x = 1, y = 0, dash = false }, IDLE })
     local expected = 0.5 * t.player.moveSpeed * (1 + t.spells.accelerateMaxStacks * t.spells.accelerateBonus)
@@ -323,6 +324,32 @@ tests["round end clears incoming wave markers"] = function(g)
     give(g, 1, "combo"); fill(g, 1, "attack", "shield")
     fire(g)
     assert(g.state == "over" and not g.wordfield.markers, "markers cleared")
+end
+
+tests["smooth movement ramps up, slides to a stop, and reverses fast"] = function(g)
+    local m, p = g.data.tuning.movement, g.players[1]
+    local full = g.data.tuning.player.moveSpeed
+    p.smoothMovement = true
+    local right, left = { x = 1, y = 0, dash = false }, { x = -1, y = 0, dash = false }
+    step(g, DT, { right, IDLE })
+    assert(p.vx > 0 and p.vx < full, "ramping up, vx " .. p.vx)
+    step(g, m.accelTime, { right, IDLE })
+    assert(math.abs(p.vx - full) < 0.01, "full speed after accelTime")
+    step(g, DT, { IDLE, IDLE })
+    assert(p.vx > 0, "slides after release")
+    step(g, m.decelTime, { IDLE, IDLE })
+    assert(p.vx == 0, "stopped after decelTime")
+    step(g, m.accelTime, { right, IDLE })
+    step(g, m.accelTime + DT, { left, IDLE })
+    assert(math.abs(p.vx + full) < 0.01, "reversed to full speed quickly")
+end
+
+tests["instant movement stays instant (baseline)"] = function(g)
+    local p = g.players[2]
+    step(g, DT, { IDLE, { x = -1, y = 0, dash = false } })
+    assert(p.vx == -g.data.tuning.player.moveSpeed, "full speed on the first frame")
+    step(g, DT, { IDLE, IDLE })
+    assert(p.vx == 0, "stops on the first frame")
 end
 
 tests["KO ends the round"] = function(g)
