@@ -71,24 +71,29 @@ local function takeUnique(pool, count, used, out, rand)
 end
 
 -- A wave (DESIGN §9): the guaranteed words (attack), topped up to
--- spellsPerWave spells, plus one condition per open condition blank across
+-- spellsPerWave spells (+1 when 4+ spell blanks are open across both
+-- players), plus one condition per open condition blank across
 -- both players. Every word in a wave is unique.
 function WordField:pickWave(tuning, spellbooks, rand)
     local w = tuning.words
+    local slots = { spell = 0, condition = 0 }
+    for _, book in ipairs(spellbooks) do
+        for _, t in ipairs(book:openTypes()) do slots[t] = slots[t] + 1 end
+    end
+
     local picks, used = {}, {}
     for _, id in ipairs(w.guaranteed) do
         local def = self.data.byId[id]
         if def and not used[id] then used[id] = true; picks[#picks + 1] = def end
     end
-    takeUnique(self.data.byType.spell, w.spellsPerWave - #picks, used, picks, rand)
+    -- One extra spell when both players together have lots of open spell
+    -- blanks (big stacks), so they aren't starved. Uniqueness caps it at
+    -- the number of different spells.
+    local spells = w.spellsPerWave
+    if slots.spell >= w.extraSpellAt then spells = spells + 1 end
+    takeUnique(self.data.byType.spell, spells - #picks, used, picks, rand)
 
-    local conditionSlots = 0
-    for _, book in ipairs(spellbooks) do
-        for _, t in ipairs(book:openTypes()) do
-            if t == "condition" then conditionSlots = conditionSlots + 1 end
-        end
-    end
-    takeUnique(self.data.byType.condition, conditionSlots, used, picks, rand)
+    takeUnique(self.data.byType.condition, slots.condition, used, picks, rand)
 
     for i = #picks, 2, -1 do
         local j = rand(1, i)

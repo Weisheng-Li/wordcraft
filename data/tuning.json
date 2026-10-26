@@ -35,6 +35,7 @@
   "words": {
     "waveInterval": 12,
     "spellsPerWave": 2,
+    "extraSpellAt": 4,
     "guaranteed": ["attack"],
     "warning": 1,
     "minPlayerDistance": 40,

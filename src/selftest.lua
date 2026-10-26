@@ -213,6 +213,15 @@ tests["wave: a word that fits one player keeps the board alive"] = function(g)
     assert(g.wordfield.words[1] == keep and not g.wordfield.markers, "no early wave")
 end
 
+tests["wave: 4+ open spell blanks across both players add a third spell"] = function(g)
+    give(g, 1, "combo"); give(g, 2, "repeat", 2) -- 3 open spell blanks
+    local set = ids(wave(g))
+    assert(countType(set, "spell") == 2, "3 open -> 2 spells")
+    give(g, 1, "combo"); give(g, 2, "combo")       -- 4 open spell blanks
+    set = ids(wave(g))
+    assert(countType(set, "spell") == 3 and set.attack, "4 open -> 3 spells incl. attack")
+end
+
 tests["wave: next wave clears leftovers"] = function(g)
     give(g, 1, "combo"); give(g, 2, "combo")
     local first = wave(g)[1]
