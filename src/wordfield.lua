@@ -97,6 +97,21 @@ function WordField:pickWave(tuning, spellbooks, rand)
     return picks
 end
 
+-- True when no word on the map fits any player's open blanks. While a
+-- player is between templates (the short deal delay) the board isn't
+-- judged, since their next template may want what's there.
+function WordField:isDead(spellbooks)
+    for _, book in ipairs(spellbooks) do
+        if not book.template then return false end
+    end
+    for _, word in ipairs(self.words) do
+        for _, book in ipairs(spellbooks) do
+            if book:canAccept(word.def) then return false end
+        end
+    end
+    return true
+end
+
 -- The wave's words are chosen when its markers appear (`warning` seconds
 -- before landing), so the marker count matches the word count.
 function WordField:update(dt, tuning, players, spellbooks, rand)
@@ -106,9 +121,10 @@ function WordField:update(dt, tuning, players, spellbooks, rand)
         return
     end
     self.waveTimer = self.waveTimer - dt
-    -- Map cleared out: bring the next wave in now (after its usual flash
-    -- warning) instead of leaving players with nothing to do.
-    if #self.words == 0 and not self.markers then
+    -- Dead board (empty, or nothing on it fits anyone): bring the next wave
+    -- in now, after its usual flash warning, instead of leaving players
+    -- with nothing to do.
+    if not self.markers and self:isDead(spellbooks) then
         self.waveTimer = math.min(self.waveTimer, tuning.words.warning)
     end
     if not self.markers and self.waveTimer <= tuning.words.warning then

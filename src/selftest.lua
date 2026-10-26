@@ -189,6 +189,30 @@ tests["wave: an emptied map gets the next wave right away"] = function(g)
     assert(g.wordfield.waveTimer > t.words.waveInterval - 1, "timer restarted")
 end
 
+tests["wave: a dead board (nothing fits anyone) brings the next wave early"] = function(g)
+    local t = g.data.tuning
+    give(g, 1, "combo"); give(g, 2, "combo")
+    wave(g)
+    step(g, 2)
+    local close = g.data.words.byId.close
+    local useless = { def = close, x = 300, y = 170 }
+    g.wordfield.words = { useless } -- only a condition left; both need spells
+    step(g, t.words.warning + 0.05)
+    for _, w in ipairs(g.wordfield.words) do assert(w ~= useless, "dead word cleared") end
+    assert(#g.wordfield.words > 0, "new wave landed")
+end
+
+tests["wave: a word that fits one player keeps the board alive"] = function(g)
+    local t = g.data.tuning
+    give(g, 1, "when"); give(g, 2, "combo")
+    wave(g)
+    step(g, 2)
+    local keep = { def = g.data.words.byId.close, x = 300, y = 170 }
+    g.wordfield.words = { keep } -- P1 still needs a condition
+    step(g, t.words.warning + 0.5)
+    assert(g.wordfield.words[1] == keep and not g.wordfield.markers, "no early wave")
+end
+
 tests["wave: next wave clears leftovers"] = function(g)
     give(g, 1, "combo"); give(g, 2, "combo")
     local first = wave(g)[1]

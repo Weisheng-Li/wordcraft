@@ -172,7 +172,7 @@ When a template **times out**, the next template **stacks onto it** instead of r
 Words arrive in **waves**.
 
 - **A wave every `12 s`**: close to the 15 s template timeout but slightly shorter. The first wave arrives when the round starts.
-- **Taken words are not replaced** until the next wave. **Exception:** if the map is completely empty, the next wave starts right away. Its markers flash for the usual 1 s, and the 12 s timer restarts from that wave.
+- **Taken words are not replaced** until the next wave. **Exception, the dead board:** if no word on the map fits either player's open blanks (including an empty map), the next wave starts right away. Its markers flash for the usual 1 s, the useless leftovers are cleared when it lands, and the 12 s timer restarts from that wave. A word that fits *either* player keeps the board alive, so denial still matters. While a player is between templates (the 0.5 s deal delay), the board isn't judged. Dead boards happen because a wave's words are chosen for what players need when its markers appear, and needs change afterwards (a level-3 template resets, a blank gets filled from leftovers during the warning), and because spells always spawn.
 - **Each new wave clears the previous wave's leftovers.**
 - **What spawns (Decided):**
   - **2 spell words, and one of them is always `attack`.** Otherwise players tend to sit and wait for their template to stack.
