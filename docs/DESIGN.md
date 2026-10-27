@@ -98,7 +98,7 @@ All conditions depend on player or enemy state, never on map tiles.
 | Condition | True when… | Proposed threshold |
 |-----------|-----------|--------------------|
 | I dash | the caster starts a dash | — |
-| I stand still | the caster hasn't moved or dashed for a while | 1.0 s |
+| I stand still | the caster hasn't moved or dashed for a while | 0.75 s (lowered from 1 s; still being playtested, see §15) |
 | I get hit | the caster is hit by a beam: it takes damage **or a shield charge absorbs it** (breaking a shield is a hit too). A beam dodged with a dash doesn't count. | — |
 | enemy is close | straight-line distance between the players is below a threshold | < 56 px |
 
@@ -259,3 +259,9 @@ Playtests showed that grabbing every word you can reach is the dominant strategy
 Related options, if this isn't enough:
 - **Show the next wave's words early**, with labels on the markers about 3 s before they land, so players can plan routes and decide which words to contest or deny.
 - **Make stacking pay more than linearly:** each level above 1 adds a bonus raise.
+
+### Condition: `enemy dashes` (possible replacement for `I stand still`)
+
+`I stand still` doesn't help with timing an attack: it describes what *you* do, and it leaves you open. It stays for now (threshold lowered to 0.75 s) while we playtest how it plays.
+
+**Idea:** `enemy dashes` fires the moment the opponent starts a dash. Dash has a 2 s cooldown, so right after they dash **they can't dodge**: a beam fired then lands while their dash is still recharging, unless they reach cover or have a shield. That makes `when enemy dashes, cast attack` a real counter to dash-dodging, and a mirror of `I dash`.

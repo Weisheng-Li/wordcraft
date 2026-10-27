@@ -29,7 +29,7 @@
     "knockbackDuration": 0.12
   },
   "conditions": {
-    "standStillTime": 1.0,
+    "standStillTime": 0.75,
     "closeDistance": 56
   },
   "templates": {
