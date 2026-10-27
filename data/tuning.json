@@ -30,8 +30,7 @@
   },
   "conditions": {
     "standStillTime": 1.0,
-    "closeDistance": 56,
-    "farDistance": 160
+    "closeDistance": 56
   },
   "templates": {
     "dealDelay": 0.5,

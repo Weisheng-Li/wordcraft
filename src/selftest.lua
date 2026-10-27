@@ -97,8 +97,9 @@ tests["when hit -> shield fires after taking damage"] = function(g)
     assert(g.players[2].hp == 9 and g.players[2].shield == 1 and not g.spellbooks[2].trap)
 end
 
-tests["when far fires immediately if already true"] = function(g)
-    give(g, 1, "when"); fill(g, 1, "far", "attack")
+tests["when close fires immediately if already true"] = function(g)
+    g.players[2].x = g.players[1].x + 30 -- already close
+    give(g, 1, "when"); fill(g, 1, "close", "attack")
     assert(not g.spellbooks[1].trap, "should fire on arming")
     fire(g)
     assert(g.players[2].hp == 9)
@@ -275,7 +276,8 @@ tests["stack: merged trap fires on either condition and casts everything"] = fun
     g.spellbooks[1].template = Spellbook.merge(template(g, "when"), template(g, "repeat", 2), t)
     fill(g, 1, "close", "attack", "attack") -- close is false, players are far apart
     assert(g.spellbooks[1].trap, "armed, not fired")
-    g.spellbooks[1].trap.conditions[2] = "far" -- an "or" that is true
+    g.spellbooks[1].trap.conditions[2] = "dash" -- an "or" that comes true
+    step(g, DT, { { x = 1, y = 0, dash = true }, IDLE }) -- dash along the open row
     step(g, DT)
     step(g, 2 * t.spells.telegraph + t.spells.repeatGap + 0.1)
     assert(g.players[2].hp == 6, "2 spells x2 = 4 hits, hp " .. g.players[2].hp)
@@ -359,6 +361,22 @@ tests["corner correction slides past a barely-clipped corner"] = function(g)
     assert(not hardY and ny < y0 - 4 and nx + 5 <= 48, "nudge: slid left of the corner and kept going")
     nx, ny, hardY = walkUp(nudge + 2, nudge)
     assert(hardY and ny == y0, "bigger overlap than the nudge: blocked")
+end
+
+tests["'I get hit' fires on a shield block, not on a dodge"] = function(g)
+    local p2 = g.players[2]
+    give(g, 2, "when"); fill(g, 2, "hit", "accelerate")
+    p2.shield = 1 -- after arming, which clears earlier effects
+    give(g, 1, "combo"); fill(g, 1, "attack", "shield")
+    fire(g)
+    assert(p2.hp == 10 and p2.shield == 0, "blocked")
+    assert(not g.spellbooks[2].trap and p2.accelerate == 1, "trap fired on the block")
+
+    give(g, 2, "when"); fill(g, 2, "hit", "accelerate")
+    give(g, 1, "combo"); fill(g, 1, "attack", "shield")
+    step(g, g.data.tuning.spells.telegraph - 0.05)
+    step(g, 0.1, { IDLE, { x = 0, y = 1, dash = true } })
+    assert(g.spellbooks[2].trap, "a dodge doesn't count as a hit")
 end
 
 tests["KO ends the round"] = function(g)
@@ -509,11 +527,11 @@ end
 
 trainingTests["pickups record who took the word"] = function(g)
     touch(g, "when")
-    local p, t = g.players[1], tile(g, "far")
+    local p, t = g.players[1], tile(g, "close")
     p.x, p.y = t.x, t.y
     step(g, DT)
     local e = g.wordfield.events[1]
-    assert(e and e.def.id == "far" and e.player == p, "event recorded")
+    assert(e and e.def.id == "close" and e.player == p, "event recorded")
     step(g, DT)
     assert(#g.wordfield.events == 0, "events last one frame")
 end

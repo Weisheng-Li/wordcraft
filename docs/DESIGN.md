@@ -50,7 +50,7 @@ Every word has exactly one type. Word tiles on the map are colour-coded by type,
 | Type | Words | Fits into |
 |------|-------|-----------|
 | **Spell** | attack, shield, accelerate | `cast ___` blanks |
-| **Condition** | I dash, I stand still, I get hit, enemy is close, enemy is far | `when ___` blanks |
+| **Condition** | I dash, I stand still, I get hit, enemy is close | `when ___` blanks |
 
 Conditions go after `when`, and spells go after `cast`.
 
@@ -99,11 +99,12 @@ All conditions depend on player or enemy state, never on map tiles.
 |-----------|-----------|--------------------|
 | I dash | the caster starts a dash | — |
 | I stand still | the caster hasn't moved or dashed for a while | 1.0 s |
-| I get hit | the caster **takes damage**. A hit absorbed by a shield or dodged with a dash doesn't count. | — |
+| I get hit | the caster is hit by a beam: it takes damage **or a shield charge absorbs it** (breaking a shield is a hit too). A beam dodged with a dash doesn't count. | — |
 | enemy is close | straight-line distance between the players is below a threshold | < 56 px |
-| enemy is far | straight-line distance is above a threshold | > 160 px |
 
-**Trigger timing (Proposed):** an armed trap fires on the first frame its condition is true, **including the moment it's armed**. For example, arming `when enemy is far, cast attack` while the enemy is already far fires it right away. It's predictable, and it keeps condition words from feeling useless.
+*Removed: `enemy is far`. A trap's main value is timing an attack, and `close` (like `dash`) creates attack openings while `far` worked against them. It was also usually already true when armed, so it behaved like a plain cast.*
+
+**Trigger timing (Proposed):** an armed trap fires on the first frame its condition is true, **including the moment it's armed**. For example, arming `when enemy is close, cast attack` while the enemy is already close fires it right away. It's predictable, and it keeps condition words from feeling useless.
 
 ## 8. Templates over time — Decided (numbers Proposed)
 
@@ -140,7 +141,7 @@ Every status is drawn on the wizard, so both players can read it without looking
 | Shield charges | One cyan **ring** around the wizard per charge, up to 5. Above 5 it becomes **one bold ring with the count** (e.g. `x6`). Display only: there is no cap on charges. |
 | Accelerate | **Speed lines** trailing behind, two more per stack |
 | Armed trap | A cyan **rune circle** turning on the floor under the wizard. The HUD also names its condition, e.g. `trap: hit > shield`. |
-| `close` / `far` in play | A plain **ring in the owner's colour** around that wizard at the real threshold (56 px for close, 160 px for far), shown while the condition is filled into their template or part of an armed trap. |
+| `close` in play | A plain **ring in the owner's colour** around that wizard at the real threshold (56 px), shown while the condition is filled into their template or part of an armed trap. |
 | Casting | **Casting pose** (see below) |
 | Dash cooldown | Small grey bar over the head while recharging |
 | Hit | Red flash and knockback |
@@ -179,7 +180,7 @@ Words arrive in **waves**.
 - **What spawns (Decided):**
   - **2 spell words, and one of them is always `attack`.** Otherwise players tend to sit and wait for their template to stack. **A third spell** joins the wave when the two players together have **4 or more open spell blanks**, so big stacks aren't starved. Since there are only 3 different spells and words in a wave are unique, that's the maximum (tuning: `extraSpellAt`).
   - **One condition word per open condition blank** across both players. For example, if both players hold `when ___, cast ___`, two conditions spawn. A filled condition blank doesn't count, and when nobody needs a condition, none spawn.
-  - **Every word in a wave is unique.** If more conditions are needed than there are different condition words (5), the wave spawns all 5.
+  - **Every word in a wave is unique.** If more conditions are needed than there are different condition words (4), the wave spawns all 4.
   - The words are chosen when the markers appear, 1 s before landing.
 - **Position (Proposed):** random open floor tiles, never inside a wall, at least **40 px** from either player and **24 px** from other words.
 - **Warning (Proposed):** spawn markers flash for 1 s before a wave lands.
@@ -206,7 +207,7 @@ A single round is enough for the POC.
 - Under each template: the active effect (armed trap or accelerate), the HP bar and the template timeout bar.
 - **Dash cooldown** is a small **grey** bar (about the width of the wizard) above the player's head, shown only while dash is recharging. It's grey so it isn't confused with health.
 - There is no timer for the next wave; the flashing spawn markers are the warning.
-- **Word tiles on the map use short labels**, such as `attack`, `shield`, `speed`, `dash`, `still`, `hit`, `close` and `far`, because full phrases like "enemy is close" are too wide at 320×180. The HUD shows the full phrase.
+- **Word tiles on the map use short labels**, such as `attack`, `shield`, `speed`, `dash`, `still`, `hit` and `close`, because full phrases like "enemy is close" are too wide at 320×180. The HUD shows the full phrase.
 - **Open:** if text is still hard to read, raise the base resolution to 480×270. That's a one-line change in `main.lua`, and the art doesn't need redrawing.
 
 ## 12. Data layout — Proposed

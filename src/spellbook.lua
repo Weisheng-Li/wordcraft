@@ -229,7 +229,6 @@ function Spellbook:conditionTrue(id, tuning)
     local dx, dy = o.x - p.x, o.y - p.y
     local dist = math.sqrt(dx * dx + dy * dy)
     if id == "close" then return dist < c.closeDistance end
-    if id == "far" then return dist > c.farDistance end
     return false
 end
 

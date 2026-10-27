@@ -135,6 +135,7 @@ function Player:receiveHit(damage, fromX, fromY, tuning)
     if self:isInvulnerable() then return "dodged" end
     if self.shield > 0 then
         self.shield = self.shield - 1
+        self.justHit = true -- breaking a shield still counts for "I get hit"
         return "blocked"
     end
     if not self.infiniteHp then self.hp = math.max(0, self.hp - damage) end

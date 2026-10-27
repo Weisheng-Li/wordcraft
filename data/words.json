@@ -6,7 +6,6 @@
     { "id": "dash",       "type": "condition", "text": "I dash",         "label": "dash" },
     { "id": "still",      "type": "condition", "text": "I stand still",  "label": "still" },
     { "id": "hit",        "type": "condition", "text": "I get hit",      "label": "hit" },
-    { "id": "close",      "type": "condition", "text": "enemy is close", "label": "close" },
-    { "id": "far",        "type": "condition", "text": "enemy is far",   "label": "far" }
+    { "id": "close",      "type": "condition", "text": "enemy is close", "label": "close" }
   ]
 }

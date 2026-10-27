@@ -36,7 +36,6 @@
     { "category": "conditions", "word": "still", "col": 7,  "row": 3 },
     { "category": "conditions", "word": "hit",   "col": 11, "row": 3 },
     { "category": "conditions", "word": "close", "col": 3,  "row": 5 },
-    { "category": "conditions", "word": "far",   "col": 7,  "row": 5 },
 
     { "category": "always", "reset": true, "label": "reset", "col": 2, "row": 7 }
   ]

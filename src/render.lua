@@ -374,12 +374,12 @@ local function drawLasers(game, sprites, time)
     love.graphics.setLineWidth(1)
 end
 
--- close/far range rings: a plain circle in the owner's colour around a
+-- close range ring: a plain circle in the owner's colour around a
 -- player whose template (filled in) or armed trap uses that condition, at
 -- the real threshold distance.
 local function drawConditionRings(game)
     local c = game.data.tuning.conditions
-    local radius = { close = c.closeDistance, far = c.farDistance }
+    local radius = { close = c.closeDistance }
     for k, book in ipairs(game.spellbooks) do
         local p, used = game.players[k], {}
         for _, b in ipairs(book:blanks()) do
