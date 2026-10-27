@@ -140,6 +140,7 @@ Every status is drawn on the wizard, so both players can read it without looking
 | Shield charges | One cyan **ring** around the wizard per charge, up to 5. Above 5 it becomes **one bold ring with the count** (e.g. `x6`). Display only: there is no cap on charges. |
 | Accelerate | **Speed lines** trailing behind, two more per stack |
 | Armed trap | A cyan **rune circle** turning on the floor under the wizard. The HUD also names its condition, e.g. `trap: hit > shield`. |
+| `close` / `far` in play | A plain **ring in the owner's colour** around that wizard at the real threshold (56 px for close, 160 px for far), shown while the condition is filled into their template or part of an armed trap. |
 | Casting | **Casting pose** (see below) |
 | Dash cooldown | Small grey bar over the head while recharging |
 | Hit | Red flash and knockback |
