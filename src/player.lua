@@ -24,9 +24,6 @@ function Player.new(id, x, y, sprite, tuning)
     self.accelerate = 0        -- accelerate stacks (each adds accelerateBonus)
     self.infiniteHp = false    -- training room: hits still land, HP never drops
     self.vx, self.vy = 0, 0    -- walking velocity
-    self.smoothMovement = false -- ease in/out instead of instant start/stop (A/B test)
-    self.movementFx = false    -- walk cycle + dust puffs, drawn by render (A/B test)
-    self.cornerCorrection = false -- slide around wall corners you barely clip (A/B test)
     -- Per-frame events, read by conditions and cleared by Game at frame end.
     self.justDashed = false
     self.justHit = false
@@ -80,11 +77,7 @@ function Player:update(dt, input, tuning, arena)
         local speed = t.player.moveSpeed
         speed = speed * (1 + self.accelerate * t.spells.accelerateBonus)
         local tx, ty = ix * speed, iy * speed
-        if self.smoothMovement then
-            self:steer(tx, ty, speed, dt, t.movement)
-        else
-            self.vx, self.vy = tx, ty
-        end
+        self:steer(tx, ty, speed, dt, t.movement)
         dx, dy = self.vx * dt, self.vy * dt
         moved = len > 0 or (self.vx * self.vx + self.vy * self.vy) > 1
     end
@@ -100,9 +93,8 @@ function Player:update(dt, input, tuning, arena)
     end
 
     if dx ~= 0 or dy ~= 0 then
-        local nudge = self.cornerCorrection and t.movement.cornerNudge or 0
         local hardX, hardY
-        self.x, self.y, hardX, hardY = arena:moveBox(self.x, self.y - h / 2, dx, dy, w, h, nudge)
+        self.x, self.y, hardX, hardY = arena:moveBox(self.x, self.y - h / 2, dx, dy, w, h, t.movement.cornerNudge)
         self.y = self.y + h / 2
         -- A wall stops velocity on that axis, so we don't push into it.
         -- (Sliding around a corner keeps it.)

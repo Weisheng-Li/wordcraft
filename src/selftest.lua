@@ -329,7 +329,6 @@ end
 tests["smooth movement ramps up, slides to a stop, and reverses fast"] = function(g)
     local m, p = g.data.tuning.movement, g.players[1]
     local full = g.data.tuning.player.moveSpeed
-    p.smoothMovement = true
     local right, left = { x = 1, y = 0, dash = false }, { x = -1, y = 0, dash = false }
     step(g, DT, { right, IDLE })
     assert(p.vx > 0 and p.vx < full, "ramping up, vx " .. p.vx)
@@ -342,14 +341,6 @@ tests["smooth movement ramps up, slides to a stop, and reverses fast"] = functio
     step(g, m.accelTime, { right, IDLE })
     step(g, m.accelTime + DT, { left, IDLE })
     assert(math.abs(p.vx + full) < 0.01, "reversed to full speed quickly")
-end
-
-tests["instant movement stays instant (baseline)"] = function(g)
-    local p = g.players[2]
-    step(g, DT, { IDLE, { x = -1, y = 0, dash = false } })
-    assert(p.vx == -g.data.tuning.player.moveSpeed, "full speed on the first frame")
-    step(g, DT, { IDLE, IDLE })
-    assert(p.vx == 0, "stops on the first frame")
 end
 
 tests["corner correction slides past a barely-clipped corner"] = function(g)

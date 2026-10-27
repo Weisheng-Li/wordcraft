@@ -73,7 +73,7 @@ local function typeColor(wordType)
     return C[TYPE_COLOR[wordType] or "condition"]
 end
 
--- Movement juice (players with movementFx): a 4-frame walk cycle whose pace
+-- Movement juice: a 4-frame walk cycle whose pace
 -- follows speed, and dust puffs when starting to move, turning sharply,
 -- or dashing. Purely visual state, kept here rather than in game logic.
 local STRIDE = 28         -- pixels travelled per full walk cycle (4 frames)
@@ -94,30 +94,28 @@ end
 
 local function updateMovementFx(dt, game)
     for k, p in ipairs(game.players) do
-        if p.movementFx then
-            local speed = math.sqrt(p.vx * p.vx + p.vy * p.vy)
-            local dashing = p:isDashing()
-            local dirX, dirY = 0, 0
-            if speed > 0 then dirX, dirY = p.vx / speed, p.vy / speed end
-            local last = lastMove[k] or { speed = 0, dirX = 0, dirY = 0, dashing = false }
+        local speed = math.sqrt(p.vx * p.vx + p.vy * p.vy)
+        local dashing = p:isDashing()
+        local dirX, dirY = 0, 0
+        if speed > 0 then dirX, dirY = p.vx / speed, p.vy / speed end
+        local last = lastMove[k] or { speed = 0, dirX = 0, dirY = 0, dashing = false }
 
-            if dashing and not last.dashing then
-                puff(p.x, p.y, -p.dashX, -p.dashY, 4)          -- kicked up behind the dash
-            elseif not dashing and speed > 10 then
-                if last.speed <= 10 then
-                    puff(p.x, p.y, -dirX, -dirY, 2)              -- starting off
-                elseif dirX * last.dirX + dirY * last.dirY < 0 then
-                    puff(p.x, p.y, -dirX, -dirY, 3)              -- sharp turn
-                end
+        if dashing and not last.dashing then
+            puff(p.x, p.y, -p.dashX, -p.dashY, 4)          -- kicked up behind the dash
+        elseif not dashing and speed > 10 then
+            if last.speed <= 10 then
+                puff(p.x, p.y, -dirX, -dirY, 2)              -- starting off
+            elseif dirX * last.dirX + dirY * last.dirY < 0 then
+                puff(p.x, p.y, -dirX, -dirY, 3)              -- sharp turn
             end
-
-            if speed > 10 and not dashing then
-                walkPhase[k] = walkPhase[k] + speed * dt / STRIDE
-            else
-                walkPhase[k] = 0
-            end
-            lastMove[k] = { speed = speed, dirX = dirX, dirY = dirY, dashing = dashing }
         end
+
+        if speed > 10 and not dashing then
+            walkPhase[k] = walkPhase[k] + speed * dt / STRIDE
+        else
+            walkPhase[k] = 0
+        end
+        lastMove[k] = { speed = speed, dirX = dirX, dirY = dirY, dashing = dashing }
     end
     for i = #dust, 1, -1 do
         local d = dust[i]
@@ -132,7 +130,7 @@ end
 -- walk frames. The frame advances with distance walked, so faster walking
 -- steps faster.
 local function walkFrame(p, sprites)
-    if not p.movementFx or walkPhase[p.id] == 0 then return nil end
+    if walkPhase[p.id] == 0 then return nil end
     local name = p.sprite .. "_walk" .. (math.floor(walkPhase[p.id] * 4) % 4 + 1)
     return sprites[name] and name or nil
 end

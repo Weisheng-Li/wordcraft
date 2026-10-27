@@ -24,6 +24,7 @@ Status legend: **Decided** = agreed, build it. **Proposed** = a recommendation t
 
 - **Players pass through each other** (Proposed). This avoids body-blocking and the extra collision code it needs.
 - **Facing:** the sprite flips to match the last horizontal movement. Only side-view art is needed for v1.
+- **Movement feel (Decided):** both wizards ease in and out instead of starting and stopping instantly (full speed in `0.07 s`, a stop in `0.05 s`; pushing the opposite way restarts from rest), leave a dash at walking speed, play a 4-frame walk cycle (feet only, no bob), kick up dust puffs when starting off, turning sharply or dashing, and get **corner correction**: clipping a wall corner by up to `4 px` slides you around it instead of stopping. Numbers live under `movement` in `tuning.json`.
 
 ## 2. Controls — Decided
 
