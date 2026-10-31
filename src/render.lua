@@ -223,11 +223,23 @@ local function orbPos(game, p, sprites, slot)
     return p.x + f * (CAST_GEM.x - w / 2 + o[1]), p.y - h + CAST_GEM.y + o[2]
 end
 
+-- Effects (shield, speed, trap) end when the template times out. In the
+-- last `expiryWarning` seconds they flash `expiryFlashes` times at a steady
+-- rate (dim, back on), then vanish. Returns an alpha multiplier: 1, or dim.
+local function expiryFade(game, p)
+    local book = game.spellbooks[p.id]
+    local t = game.data.tuning.templates
+    local tpl, warn = book.template, t.expiryWarning
+    if book.sandbox or not tpl or tpl.timeLeft > warn then return 1 end
+    local phase = (warn - math.max(tpl.timeLeft, 0)) / warn * t.expiryFlashes -- flashes so far
+    return (phase % 1) < 0.5 and 0.15 or 1
+end
+
 -- Armed trap: a dashed rune circle turning on the floor under the wizard.
-local function drawTrapRune(p, time)
+local function drawTrapRune(p, time, fade)
     local segs = 12
     local spin = time * 1.5
-    setColor(C.condition, 0.8 + 0.2 * math.sin(time * 6))
+    setColor(C.condition, (0.8 + 0.2 * math.sin(time * 6)) * fade)
     for i = 0, segs - 1, 2 do
         local a1 = spin + i / segs * math.pi * 2
         local a2 = spin + (i + 1) / segs * math.pi * 2
@@ -243,10 +255,11 @@ local function drawPlayer(game, p, sprites, time)
     local img = sprites[casting and (p.sprite .. "_cast") or walk or p.sprite]
     local w, h = img:getDimensions()
     local facing = casting and castFacing(game, p) or p.facing
+    local fade = expiryFade(game, p)
 
     setColor(C.shadow)
     love.graphics.ellipse("fill", p.x, p.y, 6, 2)
-    if game.spellbooks[p.id].trap then drawTrapRune(p, time) end
+    if game.spellbooks[p.id].trap then drawTrapRune(p, time, fade) end
 
     local alpha = p:isDashing() and 0.45 or 1
     if hurt[p.id] > 0 and math.floor(hurt[p.id] * 20) % 2 == 0 then
@@ -299,7 +312,7 @@ local function drawPlayer(game, p, sprites, time)
     -- Shield charges: one ring per charge up to 5; beyond that a single
     -- bold ring with the count ("x6"), so a big stack stays readable.
     if p.shield > 5 then
-        setColor(C.shield)
+        setColor(C.shield, fade)
         love.graphics.setLineWidth(3)
         love.graphics.circle("line", p.x, p.y - 12, 14)
         love.graphics.setLineWidth(1)
@@ -307,13 +320,13 @@ local function drawPlayer(game, p, sprites, time)
         local f = fonts.small
         love.graphics.setFont(f)
         local lx, ly = math.floor(p.x + 11), math.floor(p.y - 30)
-        setColor(C.bg)
+        setColor(C.bg, fade)
         love.graphics.print(label, lx + 1, ly + 1)
-        setColor(C.shield)
+        setColor(C.shield, fade)
         love.graphics.print(label, lx, ly)
     else
         for i = 1, p.shield do
-            setColor(C.shield, 0.9 - (i - 1) * 0.1)
+            setColor(C.shield, (0.9 - (i - 1) * 0.1) * fade)
             love.graphics.circle("line", p.x, p.y - 12, 11 + (i - 1) * 3)
         end
     end
@@ -326,7 +339,7 @@ local function drawPlayer(game, p, sprites, time)
             local ly = p.y - 3 - i * (20 / lines)
             local lx = p.x + back * (9 + (i % 2) * 3)
             local len = 4 + (i % 3) * 2
-            setColor(C.timer, 0.85)
+            setColor(C.timer, 0.85 * fade)
             love.graphics.line(lx, ly, lx + back * len, ly)
         end
     end

@@ -34,7 +34,9 @@
   },
   "templates": {
     "dealDelay": 0.5,
-    "timeout": [7.5, 12, 16.5]
+    "timeout": [7.5, 12, 16.5],
+    "expiryWarning": 1.5,
+    "expiryFlashes": 3
   },
   "words": {
     "waveInterval": 6,

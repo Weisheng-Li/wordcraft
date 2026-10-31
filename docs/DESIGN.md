@@ -141,6 +141,7 @@ Every status is drawn on the wizard, so both players can read it without looking
 | Shield charges | One cyan **ring** around the wizard per charge, up to 5. Above 5 it becomes **one bold ring with the count** (e.g. `x6`). Display only: there is no cap on charges. |
 | Accelerate | **Speed lines** trailing behind, two more per stack |
 | Armed trap | A cyan **rune circle** turning on the floor under the wizard. The HUD also names its condition, e.g. `trap: hit > shield`. |
+| Effect about to expire | In the last `1.5 s` before the current template times out (which ends the effect window), the **shield rings, speed lines and trap rune flash 3 times** at a steady rate (dim, then back on), then vanish. In a fast game the expiry was easy to miss. (A version that sped up toward the end felt like too much.) Finishing the next template also ends the effect, but the player chooses that, so it gets no warning. Not shown in training (no timeouts). Tuning: `templates.expiryWarning`, `templates.expiryFlashes`. |
 | `close` in play | A plain **ring in the owner's colour** around that wizard at the real threshold (56 px), shown while the condition is filled into their template or part of an armed trap. |
 | Casting | **Casting pose** (see below) |
 | Dash cooldown | Small grey bar over the head while recharging |
