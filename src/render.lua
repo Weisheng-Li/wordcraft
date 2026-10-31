@@ -603,7 +603,7 @@ local function drawPanel(game, k, x)
     love.graphics.print(effectText(book, words), x + t.player.hp * 5 + 4, 29)
 
     -- Template timeout, coloured by stack level (no timeouts in training)
-    local tl = book.template and book.template.timeLeft / t.templates.timeout or 0
+    local tl = book.template and book.template.timeLeft / book.template.timeTotal or 0
     if not book.sandbox then drawBar(x, 40, PANEL_W - 12, tl, levelCol) end
 end
 

@@ -34,10 +34,10 @@
   },
   "templates": {
     "dealDelay": 0.5,
-    "timeout": 15
+    "timeout": [7.5, 12, 16.5]
   },
   "words": {
-    "waveInterval": 12,
+    "waveInterval": 6,
     "spellsPerWave": 2,
     "extraSpellAt": 4,
     "guaranteed": ["attack"],
@@ -51,5 +51,15 @@
   },
   "round": {
     "countdown": 3
+  },
+  "bot": {
+    "reactionTime": 0.25,
+    "raceRatio": 1.5,
+    "raceMinGap": 8,
+    "trapMargin": 10,
+    "attackBonus": 0.3,
+    "denyBonus": 0.5,
+    "contestRatio": 0.6,
+    "lostCause": 0.3
   }
 }

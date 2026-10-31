@@ -3,10 +3,12 @@
 -- integer factor so pixels stay crisp.
 --
 -- Debug flags (after the game folder):
---   love . --selftest   love . --shot   love . --shot-training
--- Keys: F2 toggles the training room (Space switches its tiles), F5 reloads code and data.
+--   love . --selftest   love . --shot   love . --shot-training   love . --bot
+-- Keys: F2 toggles the training room (Space switches its tiles), F3 hands P2
+-- to the bot (or back), F5 reloads code and data.
 
 local json = require("src.json")
+local Bot = require("src.bot")
 local Game = require("src.game")
 local Render = require("src.render")
 
@@ -28,6 +30,12 @@ local time = 0
 local shotAt -- --shot: capture the canvas at this time, then quit
 local mode = "versus" -- F2 toggles the training room
 local showcased = false
+local bot -- P2's bot while F3 has it on (versus only)
+
+local function toggleBot()
+    bot = not bot and Bot.new(2, math.random) or nil
+    print("P2: " .. (bot and "bot" or "human"))
+end
 
 local function loadJson(path)
     return json.decode(love.filesystem.read(path))
@@ -69,6 +77,8 @@ function love.load(args)
             shotAt, mode, showcased = 2.5, "training", "training"
         elseif a == "--shot" then
             shotAt = 3.85
+        elseif a == "--bot" then
+            toggleBot()
         end
     end
 
@@ -104,7 +114,9 @@ function love.update(dt)
     if not game then return end
     dt = math.min(dt, 1 / 30) -- avoid huge steps after a window drag/stall
     time = time + dt
-    game:update(dt, { readInput(1), readInput(2) })
+    local p2 = readInput(2) -- read anyway so a held dash doesn't carry over
+    if bot and game.mode == "versus" then p2 = bot:update(dt, game) end
+    game:update(dt, { readInput(1), p2 })
 
     -- Screenshot sample scenes run between the game and render updates so
     -- render sees anything they inject (e.g. a pickup event).
@@ -154,6 +166,7 @@ function love.keypressed(key)
         newGame()
         return
     end
+    if key == "f3" then toggleBot() end
     if not game then return end
     for k, c in ipairs(CONTROLS) do
         if key == c.dash then dashPressed[k] = true end

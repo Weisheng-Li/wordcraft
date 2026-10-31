@@ -1,6 +1,7 @@
 -- Headless rules check: `lovec . --selftest`. Drives Game with scripted
 -- inputs and checks the rules from docs/DESIGN.md. Prints PASS/FAIL lines.
 
+local Bot = require("src.bot")
 local Game = require("src.game")
 local Spellbook = require("src.spellbook")
 
@@ -117,7 +118,7 @@ tests["effect ends when the next template times out"] = function(g)
     give(g, 1, "repeat", 3); fill(g, 1, "shield")
     step(g, 3 * g.data.tuning.spells.raiseTime + 2 * g.data.tuning.spells.repeatGap + 0.1)
     assert(g.players[1].shield == 3, "3 charges, got " .. g.players[1].shield)
-    step(g, g.data.tuning.templates.timeout + 0.1)
+    step(g, Spellbook.timeoutFor(1, g.data.tuning) + 0.1)
     assert(g.players[1].shield == 0, "charges cleared by timeout")
 end
 
@@ -248,7 +249,20 @@ tests["stack: timeout merges the next template and keeps filled words"] = functi
     assert(tpl.level == 2, "level " .. tpl.level)
     assert(tpl.spells[1].word == "shield", "filled word kept")
     assert(#tpl.spells + #tpl.conditions >= 3, "blanks piled up")
-    assert(tpl.timeLeft > g.data.tuning.templates.timeout - 0.1, "timer reset")
+    assert(tpl.timeLeft > Spellbook.timeoutFor(2, g.data.tuning) - 0.1, "timer reset to the level-2 time")
+end
+
+tests["stack: each level gets its own timeout"] = function(g)
+    local book, t = g.spellbooks[1], g.data.tuning
+    give(g, 1, "combo")
+    for level = 1, 3 do
+        local tpl = book.template
+        assert(tpl.level == level, "level " .. tpl.level)
+        assert(tpl.timeTotal == t.templates.timeout[level], "level " .. level .. " time " .. tpl.timeTotal)
+        assert(math.abs(tpl.timeLeft - tpl.timeTotal) < 0.05, "starts full")
+        tpl.timeLeft = 0.01; step(g, DT * 2)
+    end
+    assert(book.template.level == 1 and book.template.timeTotal == t.templates.timeout[1], "back to level-1 time")
 end
 
 tests["stack: level 3 timeout starts over at level 1"] = function(g)
@@ -466,10 +480,11 @@ end
 
 trainingTests["training: no timeouts and no dealing"] = function(g)
     local book = g.spellbooks[1]
-    step(g, g.data.tuning.templates.timeout + 1)
+    local longest = Spellbook.timeoutFor(math.huge, g.data.tuning)
+    step(g, longest + 1)
     assert(not book.template, "nothing dealt")
     touch(g, "and")
-    step(g, g.data.tuning.templates.timeout + 1)
+    step(g, longest + 1)
     assert(book.template and book.template.level == 1, "no timeout stacking")
 end
 
@@ -535,6 +550,86 @@ trainingTests["pickups record who took the word"] = function(g)
     step(g, DT)
     assert(#g.wordfield.events == 0, "events last one frame")
 end
+
+-- Bot: P2 plays itself; P1 is IDLE unless a test says otherwise.
+local function botStep(g, bot, seconds, p1)
+    local n = math.floor(seconds / DT + 0.5)
+    for _ = 1, n do g:update(DT, { p1 or IDLE, bot:update(DT, g) }) end
+end
+
+-- A bot with fixed "random" rolls.
+local function steadyBot()
+    return Bot.new(2, function() return 0.5 end)
+end
+
+tests["bot walks around a wall to a word it can use"] = function(g)
+    local bot = steadyBot()
+    local p = g.players[2]
+    p.x, p.y = g.arena:tileCenter(12, 5) -- right of the central wall
+    local wx, wy = g.arena:tileCenter(9, 5) -- left of it
+    g.wordfield.words = { { def = g.data.words.byId.attack, x = wx, y = wy } }
+    give(g, 2, "combo")
+    botStep(g, bot, 3)
+    assert(#g.wordfield.words == 0, "bot should have picked up the word")
+    assert(g.spellbooks[2].template.spells[1].word == "attack")
+end
+
+tests["bot ignores words that don't fit"] = function(g)
+    local bot = steadyBot()
+    local p = g.players[2]
+    local x0 = p.x
+    g.wordfield.words = { { def = g.data.words.byId.close, x = p.x - 40, y = p.y } }
+    give(g, 2, "combo")
+    botStep(g, bot, 1)
+    assert(#g.wordfield.words == 1 and math.abs(p.x - x0) < 1, "bot should stay put")
+end
+
+tests["bot dashes to win a word the enemy wants too"] = function(g)
+    local bot = steadyBot()
+    local p1, p2 = g.players[1], g.players[2]
+    p1.x, p2.x = 190, 280
+    g.wordfield.words = { { def = g.data.words.byId.attack, x = 240, y = p2.y } }
+    give(g, 1, "combo"); give(g, 2, "combo")
+    botStep(g, bot, 0.5)
+    assert(#g.wordfield.words == 0 and g.spellbooks[2].template.spells[1].word == "attack", "bot should get the word")
+    assert(p2.dashCooldown > 0, "bot should have dashed")
+end
+
+tests["bot doesn't dash at a laser, it hides behind a wall"] = function(g)
+    local bot = steadyBot()
+    local p1, p2 = g.players[1], g.players[2]
+    p1.x, p1.y = g.arena:tileCenter(2, 3)
+    p2.x, p2.y = g.arena:tileCenter(13, 3)
+    assert(g.arena:lineOfSight(p1.x, p1.y, p2.x, p2.y), "starts in the open")
+    give(g, 1, "combo"); fill(g, 1, "attack", "attack")
+    botStep(g, bot, g.data.tuning.spells.telegraph + 0.1)
+    assert(p2.hp == 10, "bot should take cover, hp " .. p2.hp)
+    assert(p2.dashCooldown == 0, "bot shouldn't dash")
+end
+
+tests["bot walks up to the enemy with a close trap armed"] = function(g)
+    local bot = steadyBot()
+    g.spellbooks[2].trap = { conditions = { "close" }, spells = { "shield" }, n = 1 }
+    botStep(g, bot, 4)
+    assert(g.spellbooks[2].trap == nil and g.players[2].shield == 1, "trap should have fired")
+end
+
+tests["bot vs bot plays a full round"] = function(g)
+    local b1, b2 = Bot.new(1, math.random), Bot.new(2, math.random)
+    g.wordfield:start(g.data.tuning)
+    local picked = 0
+    for _ = 1, math.floor(180 / DT) do
+        g:update(DT, { b1:update(DT, g), b2:update(DT, g) })
+        picked = picked + #g.wordfield.events
+        if g.state == "over" then break end
+    end
+    local p1, p2 = g.players[1], g.players[2]
+    print(string.format("      bot vs bot: %d words, hp %d / %d, %s", picked, p1.hp, p2.hp,
+        g.state == "over" and ("winner " .. tostring(g.winner)) or "no winner in 180 s"))
+    assert(picked >= 10, "bots should be collecting words, got " .. picked)
+    assert(p1.hp + p2.hp < 20, "someone should have been hit")
+end
+
 -- Sample scene for `--shot` screenshots: stacked templates, shields, a trap.
 function SelfTest.showcase(g)
     local t = g.data.tuning

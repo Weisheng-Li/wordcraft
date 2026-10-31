@@ -98,7 +98,7 @@ All conditions depend on player or enemy state, never on map tiles.
 | Condition | True when… | Proposed threshold |
 |-----------|-----------|--------------------|
 | I dash | the caster starts a dash | — |
-| I stand still | the caster hasn't moved or dashed for a while | 0.75 s (lowered from 1 s; still being playtested, see §15) |
+| I stand still | the caster hasn't moved or dashed for a while | 0.75 s (lowered from 1 s; still being playtested, see §16) |
 | I get hit | the caster is hit by a beam: it takes damage **or a shield charge absorbs it** (breaking a shield is a hit too). A beam dodged with a dash doesn't count. | — |
 | enemy is close | straight-line distance between the players is below a threshold | < 56 px |
 
@@ -113,7 +113,7 @@ All conditions depend on player or enemy state, never on map tiles.
 - Each player is dealt one random template at match start.
 - A player gets a new template, after a `0.5 s` delay (Proposed), when **either** of these happens first:
   - they **complete** their current template (cast or armed), or
-  - the template **times out** after `15 s` (Proposed). A countdown bar shows the time left.
+  - the template **times out**. The time depends on its stack level (Proposed): **`7.5 s` at level 1, `12 s` at level 2, `16.5 s` at level 3** (50% / 80% / 110% of the old flat 15 s). A level-1 template is quick to fill, so it moves on fast, and that also makes upgrading by waiting a real option. Big stacks need more words, so they get more time, which avoids the frustration of never finishing a powerful spell. A countdown bar shows the time left at the current level.
 - On a timeout, the next template **stacks** onto the current one and filled words are kept (see Template stacking below). Words are lost only when a level-3 template times out.
 
 ### Effect window: no snowballing
@@ -130,7 +130,7 @@ Whatever a completed template produced lasts **only until the player's next temp
 
 A player has at most **one** active effect at a time, plus a template in progress. A spell fired by a trap counts as that trap's effect, so it lives in the same window.
 
-Example: P1 completes `repeat 4: cast shield` and gets 4 charges. P1's next template times out 15 s later, so any unused charges disappear at that moment.
+Example: P1 completes `repeat 4: cast shield` and gets 4 charges. P1's next template times out 7.5 s later, so any unused charges disappear at that moment.
 
 ### Status is always visual
 
@@ -158,7 +158,7 @@ When a template **times out**, the next template **stacks onto it** instead of r
 - **Stack levels:** a fresh template is level 1. Each timeout stacks one more template on, up to **level 3**. If a level-3 template times out, it's discarded (words lost) and a fresh level-1 template is dealt.
 - **Completing** a template at any level casts it, and the next template starts again at level 1.
 - **Every timeout ends the previous effect**, including a stacking timeout. The effect-window rule above still applies, so waiting never extends an old shield or trap.
-- The timeout timer restarts in full at each level.
+- The timeout timer restarts in full at each level, using that level's time (7.5 / 12 / 16.5 s).
 
 **Merge rules.** Every template, single or stacked, has the shape `when <conditions>, repeat <N>: cast <spells>`, where the `when` and `repeat` parts are optional.
 - Words already collected **stay filled**.
@@ -174,8 +174,8 @@ When a template **times out**, the next template **stacks onto it** instead of r
 
 Words arrive in **waves**.
 
-- **A wave every `12 s`**: close to the 15 s template timeout but slightly shorter. The first wave arrives when the round starts.
-- **Taken words are not replaced** until the next wave. **Exception, the dead board:** if no word on the map fits either player's open blanks (including an empty map), the next wave starts right away. Its markers flash for the usual 1 s, the useless leftovers are cleared when it lands, and the 12 s timer restarts from that wave. A word that fits *either* player keeps the board alive, so denial still matters. While a player is between templates (the 0.5 s deal delay), the board isn't judged. Dead boards happen because a wave's words are chosen for what players need when its markers appear, and needs change afterwards (a level-3 template resets, a blank gets filled from leftovers during the warning), and because spells always spawn.
+- **A wave every `6 s`**, kept just under the **level-1** template timeout (7.5 s), in the same 80% ratio as the old 12 s wave against the old flat 15 s timeout. Being tested. The first wave arrives when the round starts.
+- **Taken words are not replaced** until the next wave. **Exception, the dead board:** if no word on the map fits either player's open blanks (including an empty map), the next wave starts right away. Its markers flash for the usual 1 s, the useless leftovers are cleared when it lands, and the 6 s timer restarts from that wave. A word that fits *either* player keeps the board alive, so denial still matters. While a player is between templates (the 0.5 s deal delay), the board isn't judged. Dead boards happen because a wave's words are chosen for what players need when its markers appear, and needs change afterwards (a level-3 template resets, a blank gets filled from leftovers during the warning), and because spells always spawn.
 - **Each new wave clears the previous wave's leftovers.**
 - **What spawns (Decided):**
   - **2 spell words, and one of them is always `attack`.** Otherwise players tend to sit and wait for their template to stack. **A third spell** joins the wave when the two players together have **4 or more open spell blanks**, so big stacks aren't starved. Since there are only 3 different spells and words in a wave are unique, that's the maximum (tuning: `extraSpellAt`).
@@ -245,7 +245,22 @@ A sandbox for testing the UI and how templates and words combine. Later it can h
 - **The player can't lose** in training. Hits still show combat text, knockback and the hit flash, but HP doesn't drop.
 - The room's layout, item positions and dummy settings live in `data/training.json`.
 
-## 15. Ideas for later
+## 15. Bot opponent — Proposed
+
+- **`F3`** hands P2 to a rule-based bot, or gives it back (`love . --bot` starts with it on). There's no menu or on-screen indicator yet. The bot only plays in versus.
+- It presses the same keys a player would (`{ x, y, dash }` each frame) and only reads the game state, so it plays by the same rules. Code: `src/bot.lua`.
+- **Rules, highest priority first:**
+  1. **Dodge.** For a laser aimed at it with a clear line (that its shield charges can't soak), it reacts after `0.25 s` and runs to the nearest spot the caster can't see. It **never dashes through a laser**: playtesting showed that reflex dash felt unnatural, since people rarely manage one.
+  2. **Use its own trap:** walk up to the enemy for `close`, stand still for `still`, dash for `dash` (once it can see the enemy, if the trap attacks).
+  3. **Keep line of sight** while its own attack is charging, by stepping out from behind a wall.
+  4. **Stay out of an enemy `close` trap** (its range plus `10 px`).
+  5. **Grab words.** It goes for the fitting word with the best value per path distance. `attack` and words the enemy also needs are worth more, unless the enemy is clearly closer. **Race dash:** when the enemy wants the same word and is no more than 1.5× as far from it, and one straight dash reaches it, the bot dashes at it. That's how people use dash.
+  6. Otherwise it waits on the nearest marker of the incoming wave.
+- Paths go over the 16 px tile grid and cut corners wherever the straight line is clear.
+- Numbers live under `bot` in `tuning.json`. `reactionTime` (how fast it runs for cover) and `raceRatio` (how readily it race-dashes) are the main difficulty settings.
+- Bot vs bot runs in the self-test (`bot vs bot plays a full round`) and prints words collected and HP. It's a first step toward headless balance runs.
+
+## 16. Ideas for later
 
 ### Pickup takes time (from playtest: "grab everything" is too strong)
 

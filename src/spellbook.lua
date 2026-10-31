@@ -34,14 +34,23 @@ local function blanksOf(def, wanted)
     return list
 end
 
+-- Seconds a template of this stack level lasts before it times out
+-- (tuning lists one per level: quick at level 1, more time for big stacks).
+function Spellbook.timeoutFor(level, tuning)
+    local list = tuning.templates.timeout
+    return list[math.min(level, #list)]
+end
+
 -- A fresh level-1 template from a definition in data/templates.json.
 function Spellbook.makeTemplate(def, n, tuning)
+    local time = Spellbook.timeoutFor(1, tuning)
     return {
         level = 1,
         conditions = blanksOf(def, "condition"),
         spells = blanksOf(def, "spell"),
         n = def.kind == "repeat" and n or nil,
-        timeLeft = tuning.templates.timeout,
+        timeLeft = time,
+        timeTotal = time, -- full time at this level, for the countdown bar
     }
 end
 
@@ -55,10 +64,12 @@ end
 -- casts of one spell) while repeat 5 + and = "repeat 5: cast ___ and ___"
 -- (fewer casts, more spells). The result is one level higher.
 function Spellbook.merge(old, new, tuning)
+    local level = old.level + 1
+    local time = Spellbook.timeoutFor(level, tuning)
     local merged = {
-        level = old.level + 1,
+        level = level,
         conditions = {}, spells = {},
-        timeLeft = tuning.templates.timeout,
+        timeLeft = time, timeTotal = time,
     }
     append(merged.conditions, old.conditions); append(merged.conditions, new.conditions)
     append(merged.spells, old.spells)

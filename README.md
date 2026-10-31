@@ -16,7 +16,7 @@ Built with [LÖVE](https://love2d.org) 11.5. Game rules live in [docs/DESIGN.md]
 | Move   | `W` `A` `S` `D` | `↑` `←` `↓` `→` |
 | Dash   | `Left Shift`    | `Right Shift`  |
 
-`R` restarts after a round ends. `F2` toggles the **training room** (one player vs a dummy; `Space` switches which tiles are on the floor: templates, spells or conditions). `Esc` quits.
+`R` restarts after a round ends. `F2` toggles the **training room** (one player vs a dummy; `Space` switches which tiles are on the floor: templates, spells or conditions). `F3` hands P2 to the **bot** or gives it back (`love . --bot` starts with it on). `Esc` quits.
 
 ## Tuning and testing
 
@@ -49,6 +49,6 @@ powershell -ExecutionPolicy Bypass -File tools\make_sprites.ps1
 ## Migration-friendly rules
 
 - Game data goes in `data/*.json`, never hardcoded in Lua.
-- Rule modules (`arena`, `player`, `spellbook`, `wordfield`, `game`) don't call `love.*`; only `render.lua` and `main.lua` do.
+- Rule modules (`arena`, `player`, `spellbook`, `wordfield`, `game`, `bot`) don't call `love.*`; only `render.lua` and `main.lua` do.
 - Tuning is read every frame from one shared table, never cached at load time, so it can be live-reloaded later.
 - Assets use standard formats (PNG, OGG/WAV, TTF/bitmap fonts).
