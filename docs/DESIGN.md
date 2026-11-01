@@ -57,7 +57,7 @@ Every word has exactly one type. Word tiles on the map are colour-coded by type,
 | Type | Words | Fits into |
 |------|-------|-----------|
 | **Spell** | attack, shield, accelerate | `cast ___` blanks |
-| **Condition** | I dash, I stand still, I get hit, enemy is close | `when ___` blanks |
+| **Condition** | I dash, I stand still, enemy is close | `when ___` blanks |
 
 Conditions go after `when`, and spells go after `cast`.
 
@@ -67,7 +67,7 @@ Conditions go after `when`, and spells go after `cast`.
 
 | Template | Blanks | Behaviour |
 |----------|--------|-----------|
-| `when ___, cast ___` | Condition, Spell | Completing it **arms** a trap that fires the spell **once**, the first time the condition is true. |
+| `when ___, cast ___` | Condition, Spell | Completing it **arms** a trap that fires the spell **every time** the condition is true, until the effect window ends (§7). |
 | `cast ___ and ___` | Spell, Spell | Casts both spells at once when completed. |
 | `repeat N: cast ___` | Spell | `N` is rolled when the template is dealt and shown in the template. The wizard **raises the staff N times**; each raise casts the spell (see "Raises" below). |
 
@@ -106,12 +106,19 @@ All conditions depend on player or enemy state, never on map tiles.
 |-----------|-----------|--------------------|
 | I dash | the caster starts a dash | — |
 | I stand still | the caster hasn't moved or dashed for a while | 0.75 s (lowered from 1 s; still being playtested, see §16) |
-| I get hit | the caster is hit by a beam: it takes damage **or a shield charge absorbs it** (breaking a shield is a hit too). A beam dodged with a dash doesn't count. | — |
 | enemy is close | straight-line distance between the players is below a threshold | < 56 px |
+
+*Removed 2026-11-01: `I get hit`. In the simulation it fired only 0.5 times per trap, the fewest of any condition. Getting hit on purpose to set it off costs 1 HP for a single reply, which is rarely worth it.*
 
 *Removed: `enemy is far`. A trap's main value is timing an attack, and `close` (like `dash`) creates attack openings while `far` worked against them. It was also usually already true when armed, so it behaved like a plain cast.*
 
-**Trigger timing (Proposed):** an armed trap fires on the first frame its condition is true, **including the moment it's armed**. For example, arming `when enemy is close, cast attack` while the enemy is already close fires it right away. It's predictable, and it keeps condition words from feeling useless.
+**Trigger timing (Proposed):** an armed trap fires **every time** its condition is true, **including the moment it's armed**, until its effect window ends (§8). For example, arming `when enemy is close, cast attack` while the enemy is already close fires it right away, and again every time it recharges while they stay close.
+- **`close` and `still` recharge.** They stay true for a while, so after one of them fires, the trap waits **`0.75 s`** (Proposed, `traps.recharge`) before they can fire it again. As long as the condition holds, it keeps firing every ~2.1 s (1.35 s cast + 0.75 s), about as often as `dash` with its 2 s cooldown. Holding still or staying close already costs aim and spacing, so the recharge only stops one condition from firing back to back. (Lowered from 2 s on 2026-11-01: at 2 s, `close`/`still` fired 1.5–1.75 times per trap against 2.5 for `dash`.)
+- **`dash` doesn't recharge.** It's a single moment, so it fires every time it happens.
+- **One cast at a time.** While a trap's spells are being cast, it ignores its conditions. The recharge starts when the cast ends.
+- Stacked conditions (`close or dash`) work the same way: any of them fires the trap, and `close`/`still` share one recharge.
+
+*Changed 2026-10-31: a trap used to fire **once**, then disarm. The simulation showed `when` returning the least per word of all templates (0.08 vs `combo` 0.21, `repeat` 0.53): you give up pickups to hold a trap, and its single beam didn't hit more often than a plain cast. Firing on every trigger matches the original idea of a trap as a buff that lasts while its effect window is open. Rejected alternatives: trap beams with a shorter warning, trap beams that pass walls (the same beam behaving differently is hard to read), and stacking tricks like two `when`s turning into a `repeat` (counterintuitive).*
 
 ## 8. Templates over time — Decided (numbers Proposed)
 
@@ -131,7 +138,7 @@ Whatever a completed template produced lasts **only until the player's next temp
 |--------|-----------------------------|
 | Shield charges | Unused charges disappear. |
 | Accelerate | Speed returns to normal. |
-| Armed `when` trap | Disarmed if it hasn't fired. |
+| Armed `when` trap | Disarmed. |
 | Repeat still raising | The remaining raises are cancelled. Beams already charging still fire. |
 | Attack | Instant, so it's unaffected. |
 
@@ -147,7 +154,7 @@ Every status is drawn on the wizard, so both players can read it without looking
 |---|---|
 | Shield charges | One cyan **ring** around the wizard per charge, up to 5. Above 5 it becomes **one bold ring with the count** (e.g. `x6`). Display only: there is no cap on charges. |
 | Accelerate | **Speed lines** trailing behind, two more per stack |
-| Armed trap | A cyan **rune circle** turning on the floor under the wizard. The HUD also spells it out, e.g. `hit > shield`. |
+| Armed trap | A cyan **rune circle** turning on the floor under the wizard. When it fires, the rune goes **dim** while the spells are cast. During a `close`/`still` recharge its dashes **light back up one by one like a clock**; fully lit means ready. The HUD also spells it out, e.g. `dash > shield`. |
 | Effect about to expire | In the last `1.5 s` before the current template times out (which ends the effect window), the **shield rings, speed lines and trap rune flash 3 times** at a steady rate (dim, then back on), then vanish. In a fast game the expiry was easy to miss. (A version that sped up toward the end felt like too much.) Finishing the next template also ends the effect, but the player chooses that, so it gets no warning. Not shown in training (no timeouts). Tuning: `templates.expiryWarning`, `templates.expiryFlashes`. |
 | `close` in play | A plain **ring in the owner's colour** around that wizard at the real threshold (56 px), shown while the condition is filled into their template or part of an armed trap. |
 | Casting | **Casting pose** (see below) |
@@ -215,7 +222,7 @@ A single round is enough for the POC.
 - Under each template: the armed trap on its own row (e.g. `close/still/dash > attack+shield+speed`, the full panel width so even a level-3 trap fits; the spaces around `>` go when space is tight, and anything longer is cut with "..."). With a 2-line template, the trap row sits evenly spaced between the template and the bottom row (6 px gaps); it stays there while a template is being dealt. The bottom row has a heart with the HP pips on the left, the template timeout bar on the right. The HUD is only 44 px tall (the top walls rise into the strip above the arena), so a 3-line template pushes the trap row closer to that bottom row.
 - **Dash cooldown** is a small **grey** bar (about the width of the wizard) above the player's head, shown only while dash is recharging. It's grey so it isn't confused with health.
 - There is no timer for the next wave; the flashing spawn markers are the warning.
-- **Word tiles on the map use short labels**, such as `attack`, `shield`, `speed`, `dash`, `still`, `hit` and `close`, because full phrases like "enemy is close" are too wide at 320×180. The HUD shows the full phrase.
+- **Word tiles on the map use short labels**, such as `attack`, `shield`, `speed`, `dash`, `still` and `close`, because full phrases like "enemy is close" are too wide at 320×180. The HUD shows the full phrase.
 - **Open:** if text is still hard to read, raise the base resolution to 480×270. That's a one-line change in `main.lua`, and the art doesn't need redrawing.
 
 ## 12. Data layout — Proposed
@@ -245,11 +252,11 @@ A sandbox for testing the UI and how templates and words combine. Later it can h
   - **Reset** clears your template and your active effect (shields, speed, trap, a repeat in progress).
 - **No timers:** templates never time out and no new templates are dealt. You build whatever you want.
 - **Step-by-step guide** in the right HUD panel. It teaches how to *build* a spell, so it reads both the template you hold (top left) and the tile tab on the floor (bottom). Each state has a title, up to two lines of instructions, and a **counter** set apart at the bottom in brighter text. Spell effects explain themselves, so there's no casting message. The guide doesn't mention `Space`; how to switch tabs will be hinted some other way. In order:
-  1. **Trap armed** (a trap is waiting and no new template has been picked up yet): it fires once, the moment its condition is true. Footer: "try it near the dummy".
+  1. **Trap armed** (a trap is waiting and no new template has been picked up yet): it fires every time its condition is true. Footer: "try it near the dummy".
   2. **Templates tab → step 1**, for as long as you stay on that tab: up to 3 templates stack into one bigger spell. Counter: `templates 2/3`. At 3/3 it says the max is stacked and to fill the blanks.
   3. **Word tab without a template → step 1:** pick up a template first, from the templates tab.
   4. **Word tab with a template → step 2, fill the blanks:** "walk onto spells to fill the blanks" when the tab has what you need (mentioning the other tab if both kinds are needed), otherwise "you need conditions, from the conditions tab". Counter: `2 blanks left`.
-- **The dummy** stands behind a short wall. It has **infinite HP** and doesn't move. A thin red circle shows its range: step inside and it attacks you with a normal laser (same aim and casting pose) every few seconds. The wall lets you test line of sight, and the dummy lets you test traps like `when hit` or `when close`.
+- **The dummy** stands behind a short wall. It has **infinite HP** and doesn't move. A thin red circle shows its range: step inside and it attacks you with a normal laser (same aim and casting pose) every few seconds. The wall lets you test line of sight, and the dummy lets you test traps like `when close`.
 - **The player can't lose** in training. Hits still show combat text, knockback and the hit flash, but HP doesn't drop.
 - The room's layout, item positions and dummy settings live in `data/training.json`.
 
@@ -259,7 +266,7 @@ A sandbox for testing the UI and how templates and words combine. Later it can h
 - It presses the same keys a player would (`{ x, y, dash }` each frame) and only reads the game state, so it plays by the same rules. Code: `src/bot.lua`.
 - **Rules, highest priority first:**
   1. **Dodge.** For a laser aimed at it with a clear line (that its shield charges can't soak), once it has noticed the aim ray (see human limits below) it runs to the nearest spot the caster can't see. It **never dashes through a laser**: playtesting showed that reflex dash felt unnatural, since people rarely manage one.
-  2. **Use its own trap:** walk up to the enemy for `close`, stand still for `still`, dash for `dash` (once it can see the enemy, if the trap attacks).
+  2. **Use its own trap whenever it can fire:** walk up to the enemy for `close`, stand still for `still`, dash for `dash` (once it can see the enemy, if the trap attacks). While the trap recharges or casts, it collects words.
   3. **Keep line of sight** while its own attack is charging, by stepping out from behind a wall.
   4. **Stay out of an enemy `close` trap** (its range plus `10 px`).
   5. **Grab words.** It goes for the fitting word with the best value per path distance. `attack` and words the enemy also needs are worth more, unless the enemy is clearly closer. **Race dash:** when the enemy wants the same word and is no more than 1.5× as far from it, and one straight dash reaches it, the bot dashes at it. That's how people use dash.

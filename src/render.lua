@@ -237,11 +237,21 @@ local function expiryFade(game, p)
 end
 
 -- Armed trap: a dashed rune circle turning on the floor under the wizard.
-local function drawTrapRune(p, time, fade)
+-- After it fires it goes dim while its spells are cast, then lights back
+-- up dash by dash like a clock during the recharge.
+local function drawTrapRune(game, p, time, fade)
+    local book = game.spellbooks[p.id]
+    local ready = 1
+    if book.casting then
+        ready = 0
+    elseif book.trap.recharge > 0 then
+        ready = 1 - book.trap.recharge / game.data.tuning.traps.recharge
+    end
     local segs = 12
     local spin = time * 1.5
-    setColor(C.condition, (0.8 + 0.2 * math.sin(time * 6)) * fade)
+    local lit = fade -- steady, so the recharge progress reads clearly
     for i = 0, segs - 1, 2 do
+        setColor(C.condition, (i / segs < ready) and lit or 0.25 * fade)
         local a1 = spin + i / segs * math.pi * 2
         local a2 = spin + (i + 1) / segs * math.pi * 2
         love.graphics.line(p.x + math.cos(a1) * 11, p.y + math.sin(a1) * 4,
@@ -260,7 +270,7 @@ local function drawPlayer(game, p, sprites, time)
 
     setColor(C.shadow)
     love.graphics.ellipse("fill", p.x, p.y, 6, 2)
-    if game.spellbooks[p.id].trap then drawTrapRune(p, time, fade) end
+    if game.spellbooks[p.id].trap then drawTrapRune(game, p, time, fade) end
 
     local alpha = p:isDashing() and 0.45 or 1
     if hurt[p.id] > 0 and math.floor(hurt[p.id] * 20) % 2 == 0 then
@@ -672,7 +682,7 @@ local function trainingGuide(game)
         local names = {}
         for i, id in ipairs(book.trap.conditions) do names[i] = words.byId[id].label end
         return "TRAP ARMED", {
-            "it fires once, the moment",
+            "it fires every time",
             "this is true: " .. table.concat(names, " or "),
         }, "try it near the dummy"
     end

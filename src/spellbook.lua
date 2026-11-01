@@ -20,7 +20,7 @@ function Spellbook.new(player, opponent, data, castSpell)
     self.castSpell = castSpell
     self.template = nil  -- { level, conditions, spells, n, timeLeft }
     self.dealTimer = 0   -- counts down to the next template when template == nil
-    self.trap = nil      -- { conditions = {ids}, spells = {ids}, n }
+    self.trap = nil      -- { conditions = {ids}, spells = {ids}, n, recharge } while armed
     self.casting = nil   -- { spells, left, raiseLeft, gapLeft } while raising the staff
     self.sandbox = false -- training room: no dealing, no timeouts; templates come from tiles
     self.effect = nil    -- the finished template whose effect window is open (for stats)
@@ -222,10 +222,10 @@ function Spellbook:complete(tuning)
 
     local spells, n = words(tpl.spells), tpl.n or 1
     self.effect = { kinds = tpl.kinds, level = tpl.level, words = #tpl.conditions + #tpl.spells,
-                    trap = #tpl.conditions > 0 }
+                    trap = #tpl.conditions > 0, conditions = words(tpl.conditions) }
     self.emit({ type = "complete", player = self.player, effect = self.effect })
     if #tpl.conditions > 0 then
-        self.trap = { conditions = words(tpl.conditions), spells = spells, n = n }
+        self.trap = { conditions = words(tpl.conditions), spells = spells, n = n, recharge = 0 }
         self:checkTrap(tuning) -- may fire right away (DESIGN §7)
     else
         self:castSequence(spells, n, tuning, { effect = self.effect })
@@ -251,20 +251,33 @@ function Spellbook:conditionTrue(id, tuning)
     local c = tuning.conditions
     if id == "dash" then return p.justDashed end
     if id == "still" then return p.stillTime >= c.standStillTime end
-    if id == "hit" then return p.justHit end
     local dx, dy = o.x - p.x, o.y - p.y
     local dist = math.sqrt(dx * dx + dy * dy)
     if id == "close" then return dist < c.closeDistance end
     return false
 end
 
--- A trap fires when any of its conditions is true.
+-- Conditions that stay true for a while (close, still) would fire every
+-- frame, so after a firing they wait out `traps.recharge`. Dash is a
+-- single moment and fires every time.
+local LASTING = { close = true, still = true }
+
+-- Can the armed trap fire for condition `id` now? Never while its spells
+-- are still being cast.
+function Spellbook:trapReady(id)
+    local trap = self.trap
+    if not trap or self.casting then return false end
+    return not LASTING[id] or trap.recharge <= 0
+end
+
+-- An armed trap fires whenever one of its conditions is true, until the
+-- effect window ends (DESIGN §7).
 function Spellbook:checkTrap(tuning)
     local trap = self.trap
     if not trap then return end
     for _, id in ipairs(trap.conditions) do
-        if self:conditionTrue(id, tuning) then
-            self.trap = nil
+        if self:trapReady(id) and self:conditionTrue(id, tuning) then
+            if LASTING[id] then trap.recharge = tuning.traps.recharge end
             self.emit({ type = "trapFired", player = self.player, effect = self.effect, trigger = id })
             self:castSequence(trap.spells, trap.n, tuning, { effect = self.effect, trigger = id })
             return
@@ -293,6 +306,9 @@ function Spellbook:update(dt, tuning, rand)
         else
             self.casting = nil
         end
+    elseif self.trap then
+        -- The recharge runs once the trap's spells are done.
+        self.trap.recharge = math.max(0, self.trap.recharge - dt)
     end
 
     self:checkTrap(tuning)

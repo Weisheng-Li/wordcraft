@@ -80,6 +80,7 @@ function Sim.playRound(data, roundNo, opts)
                 round = roundNo, player = e.player.id, shape = shapeOf(e.effect.kinds),
                 level = e.effect.level, words = e.effect.words, result = e.effect.trap and "trap" or "cast",
                 start = e.time, window = 0, damage = 0, blocked = 0, mine = 0, theirs = 0, fired = 0,
+                conditions = shapeOf(e.effect.conditions):gsub("%+", "/"),
             }
             S.templates[#S.templates + 1] = row
             open[e.effect], rowOf[e.effect] = row, row
@@ -87,7 +88,7 @@ function Sim.playRound(data, roundNo, opts)
             S.templates[#S.templates + 1] = {
                 round = roundNo, player = e.player.id, shape = shapeOf(e.kinds), level = e.level,
                 words = 0, result = "timeout", start = e.time, window = 0,
-                damage = 0, blocked = 0, mine = 0, theirs = 0, fired = 0,
+                damage = 0, blocked = 0, mine = 0, theirs = 0, fired = 0, conditions = "",
             }
         elseif e.type == "effectEnd" then
             closeWindow(e.effect, e.time)
@@ -405,6 +406,38 @@ local function report(records, S, out)
             pct(tr.blocked, tr.beams), pct(tr.dodged, tr.beams), pct(tr.wall, tr.beams)))
     end
 
+    -- Traps by condition: how often each fires, and how long it stays armed
+    -- (its effect window).
+    out("")
+    out("  traps by condition  (fired = firings per trap; armed = time until its window ends)")
+    out(string.format("  %-14s %6s %11s %11s %9s", "", "traps", "fired", "armed", "per min"))
+    local trapRows = {}
+    for _, r in ipairs(S.templates) do
+        if r.result == "trap" then
+            local tr = trapRows[r.conditions] or { key = r.conditions, n = 0, fired = 0, window = 0 }
+            trapRows[r.conditions] = tr
+            tr.n, tr.fired, tr.window = tr.n + 1, tr.fired + r.fired, tr.window + r.window
+        end
+    end
+    local trapOrder = {}
+    for _, tr in pairs(trapRows) do trapOrder[#trapOrder + 1] = tr end
+    table.sort(trapOrder, function(a, b) return a.n > b.n end)
+    for _, tr in ipairs(trapOrder) do
+        local function sum(field)
+            return function(R)
+                local a, b = 0, 0
+                for _, r in ipairs(R.templates) do
+                    if r.result == "trap" and r.conditions == tr.key then a, b = a + r[field], b + 1 end
+                end
+                return a, b
+            end
+        end
+        out(string.format("  %-14s %6d %s %s %9.1f", tr.key, tr.n,
+            lpad(numSE("%.2f", ratio(records, sum("fired"))), 11),
+            lpad(numSE("%.1f", ratio(records, sum("window"))) .. "s", 11),
+            avg(tr.fired, tr.window) * 60))
+    end
+
     -- 4. Words
     local w = S.waves
     out("")
@@ -462,7 +495,7 @@ local function report(records, S, out)
 end
 
 local CSV_COLUMNS = { "round", "player", "shape", "level", "result", "words", "window",
-                      "damage", "blocked", "fired", "mine", "theirs" }
+                      "damage", "blocked", "fired", "conditions", "mine", "theirs" }
 
 local function csv(rows)
     local lines = { table.concat(CSV_COLUMNS, ",") }

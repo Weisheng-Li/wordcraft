@@ -90,20 +90,57 @@ tests["repeat N fires N attacks"] = function(g)
     assert(g.players[2].hp == 7, "expected 7, got " .. g.players[2].hp)
 end
 
-tests["when hit -> shield fires after taking damage"] = function(g)
-    give(g, 2, "when"); fill(g, 2, "hit", "shield")
-    assert(g.spellbooks[2].trap, "trap armed")
-    give(g, 1, "combo"); fill(g, 1, "attack", "shield")
-    fire(g)
-    assert(g.players[2].hp == 9 and g.players[2].shield == 1 and not g.spellbooks[2].trap)
-end
-
 tests["when close fires immediately if already true"] = function(g)
     g.players[2].x = g.players[1].x + 30 -- already close
     give(g, 1, "when"); fill(g, 1, "close", "attack")
-    assert(not g.spellbooks[1].trap, "should fire on arming")
+    assert(g.spellbooks[1].casting, "should fire on arming")
     fire(g)
     assert(g.players[2].hp == 9)
+end
+
+tests["close trap keeps firing while the enemy stays close, after each recharge"] = function(g)
+    local t = g.data.tuning
+    local p1 = g.players[1]
+    g.players[2].x = p1.x + 30
+    give(g, 1, "when"); fill(g, 1, "close", "shield")
+    assert(p1.shield == 1, "fires on arming")
+    step(g, t.spells.raiseTime + 0.05) -- spells done: the recharge starts
+    step(g, t.traps.recharge - 0.2)
+    assert(p1.shield == 1, "still recharging")
+    step(g, 0.3)
+    assert(p1.shield == 2, "fired again, got " .. p1.shield)
+    g.players[2].x = p1.x + 150 -- enemy leaves
+    step(g, t.spells.raiseTime + t.traps.recharge + 0.5)
+    assert(p1.shield == 2, "nothing while the enemy is away")
+end
+
+tests["dash trap fires on every dash, with no recharge"] = function(g)
+    local t = g.data.tuning
+    local p1 = g.players[1]
+    give(g, 1, "when"); fill(g, 1, "dash", "shield")
+    step(g, DT, { { x = 1, y = 0, dash = true }, IDLE })
+    assert(p1.shield == 1 and g.spellbooks[1].trap.recharge == 0, "fired, no recharge")
+    step(g, t.dash.cooldown + 0.05)
+    step(g, DT, { { x = -1, y = 0, dash = true }, IDLE })
+    assert(p1.shield == 2, "fired on the second dash, got " .. p1.shield)
+end
+
+tests["a trap ignores its condition while its spells are being cast"] = function(g)
+    local p1 = g.players[1]
+    give(g, 1, "when"); fill(g, 1, "dash", "shield")
+    step(g, DT, { { x = 1, y = 0, dash = true }, IDLE })
+    assert(g.spellbooks[1].casting and not g.spellbooks[1]:trapReady("dash"))
+    p1.dashCooldown = 0
+    step(g, DT, { { x = -1, y = 0, dash = true }, IDLE })
+    assert(p1.shield == 1, "second dash during the cast is ignored")
+end
+
+tests["a trap stays armed until the next template ends"] = function(g)
+    g.players[2].x = g.players[1].x + 30
+    give(g, 1, "when"); fill(g, 1, "close", "shield")
+    assert(g.spellbooks[1].trap)
+    give(g, 1, "repeat", 2); fill(g, 1, "accelerate")
+    assert(not g.spellbooks[1].trap and g.players[1].shield == 0, "the next completion ends it")
 end
 
 tests["when dash fires on dash"] = function(g)
@@ -375,22 +412,6 @@ tests["corner correction slides past a barely-clipped corner"] = function(g)
     assert(not hardY and ny < y0 - 4 and nx + 5 <= 48, "nudge: slid left of the corner and kept going")
     nx, ny, hardY = walkUp(nudge + 2, nudge)
     assert(hardY and ny == y0, "bigger overlap than the nudge: blocked")
-end
-
-tests["'I get hit' fires on a shield block, not on a dodge"] = function(g)
-    local p2 = g.players[2]
-    give(g, 2, "when"); fill(g, 2, "hit", "accelerate")
-    p2.shield = 1 -- after arming, which clears earlier effects
-    give(g, 1, "combo"); fill(g, 1, "attack", "shield")
-    fire(g)
-    assert(p2.hp == 10 and p2.shield == 0, "blocked")
-    assert(not g.spellbooks[2].trap and p2.accelerate == 1, "trap fired on the block")
-
-    give(g, 2, "when"); fill(g, 2, "hit", "accelerate")
-    give(g, 1, "combo"); fill(g, 1, "attack", "shield")
-    step(g, g.data.tuning.spells.telegraph - 0.05)
-    step(g, 0.1, { IDLE, { x = 0, y = 1, dash = true } })
-    assert(g.spellbooks[2].trap, "a dodge doesn't count as a hit")
 end
 
 tests["KO ends the round"] = function(g)
@@ -684,9 +705,9 @@ end
 
 tests["bot walks up to the enemy with a close trap armed"] = function(g)
     local bot = steadyBot()
-    g.spellbooks[2].trap = { conditions = { "close" }, spells = { "shield" }, n = 1 }
+    g.spellbooks[2].trap = { conditions = { "close" }, spells = { "shield" }, n = 1, recharge = 0 }
     botStep(g, bot, 4)
-    assert(g.spellbooks[2].trap == nil and g.players[2].shield == 1, "trap should have fired")
+    assert(g.players[2].shield >= 1, "trap should have fired")
 end
 
 tests["bot vs bot plays a full round"] = function(g)
@@ -779,13 +800,13 @@ function SelfTest.showcase(g)
     b2.template = Spellbook.merge(Spellbook.merge(template(g, "when"), template(g, "when"), t), template(g, "combo"), t)
     b2.template.conditions[1].word, b2.template.conditions[2].word = "close", "still"
     b2.template.spells[1].word, b2.template.spells[2].word = "shield", "accelerate"
-    b2.trap = { conditions = { "hit" }, spells = { "shield" }, n = 1, recharge = 0 }
+    b2.trap = { conditions = { "dash" }, spells = { "shield" }, n = 1, recharge = 0 }
     g.players[2].shield = 9
     g.players[1].accelerate = 2
     g.players[1].dashCooldown = t.dash.cooldown * 0.4
     g.players[1].dashTime, g.players[1].dashX, g.players[1].dashY = 0.1, 1, 0 -- exercises dust puffs
     -- Widest possible trap text (level 3), half recharged.
-    b1.trap = { conditions = { "close", "still", "dash" }, spells = { "attack", "shield", "accelerate" }, n = 1, recharge = 1 }
+    b1.trap = { conditions = { "close", "still", "dash" }, spells = { "attack", "shield", "accelerate" }, n = 1, recharge = 0.4 }
     b1.template.timeLeft = 1.5 -- P1's effects are about to expire: exercises the blink
     local _, y = g.arena:tileCenter(1, 3) -- open row, clear line of sight
     g.players[1].y, g.players[2].y = y, y

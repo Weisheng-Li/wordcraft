@@ -92,6 +92,15 @@ There's deliberately no per-spell breakdown inside templates. The three spells a
 ### 3. Beam hit rate by what fired it
 For every beam: hit / blocked by shield / dodged by dash / stopped by a wall. Rows: `plain cast` (from a non-trap template) and one row per **trap condition that set it off**. Traps exist to make attacks land, so a condition that doesn't beat the plain-cast hit rate isn't doing its job.
 
+**Traps by condition** (under section 3): one row per armed trap's condition set (e.g. `close`, `dash/still`).
+
+| Column | Meaning |
+|---|---|
+| traps | Traps armed |
+| fired | Average firings per trap |
+| armed | Average time armed, i.e. its effect window, until the next template ends |
+| per min | Firings per minute while armed. Together with `armed`, this shows how often the trigger comes up. |
+
 ### 4. Word spawning
 | Metric | Notes |
 |---|---|
@@ -108,7 +117,7 @@ For every beam: hit / blocked by shield / dodged by dash / stopped by a wall. Ro
 | Accelerate | Stacks gained per round, share of the time it's active, average stacks while active, **pickups per minute while accelerated vs normal** |
 
 ### CSV columns
-One row per finished or timed-out template: `round, player, shape, level, result (cast / trap / timeout), words, window, damage, blocked, fired (trap firings), mine, theirs`. Use it for any group-by the report doesn't do.
+One row per finished or timed-out template: `round, player, shape, level, result (cast / trap / timeout), words, window, damage, blocked, fired (trap firings), conditions (a trap's condition set), mine, theirs`. Use it for any group-by the report doesn't do.
 
 ## Value of a spell or rule: A/B win rate
 
@@ -119,6 +128,12 @@ Some value is indirect. Speed, for example, means more words, which means more c
 ## Results log
 
 Newest first. Each entry records the bot version, because bot changes shift every number. Raw numbers for every gameplay commit are in the history of [STATS.md](STATS.md).
+
+### 2026-11-01 — repeating traps, `hit` removed, 0.75 s recharge
+
+- **Setup:** small run (1 min, 237 rounds), default vs default. Traps now fire every time their condition holds until the effect window ends. `close`/`still` recharge 0.75 s. `I get hit` is removed. An in-between run (212 rounds, 2 s recharge, `hit` still in) gave `when` ret/word 0.17 and `close`/`still`/`dash`/`hit` 1.51/1.75/2.54/0.50 firings per trap.
+- **Reading:** `when` ret/word 0.27±0.01 (was 0.10), level with `combo` (0.25); `repeat` still strongest (0.68). Firings per trap: `close` 2.34, `still` 2.63, `dash` 2.53. Trap beams hit 27.8% vs 31.2% for plain casts. Cost: `when` picks 42.1% (was 45.5) and timeouts 24.8%, as the bot keeps its traps firing instead of collecting. Rounds 109±2 s (was 127).
+- **P1/P2:** 43.9/56.1 ±3.2. The P2 lean is back (the in-between run had 50.5/49.5). Still worth a big run.
 
 ### 2026-11-01 — bot with human limits
 

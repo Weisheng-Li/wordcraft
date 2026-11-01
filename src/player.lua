@@ -26,7 +26,6 @@ function Player.new(id, x, y, sprite, tuning)
     self.vx, self.vy = 0, 0    -- walking velocity
     -- Per-frame events, read by conditions and cleared by Game at frame end.
     self.justDashed = false
-    self.justHit = false
     return self
 end
 
@@ -135,11 +134,9 @@ function Player:receiveHit(damage, fromX, fromY, tuning)
     if self:isInvulnerable() then return "dodged" end
     if self.shield > 0 then
         self.shield = self.shield - 1
-        self.justHit = true -- breaking a shield still counts for "I get hit"
         return "blocked"
     end
     if not self.infiniteHp then self.hp = math.max(0, self.hp - damage) end
-    self.justHit = true
 
     local dx, dy = self.x - fromX, self.y - fromY
     local len = math.sqrt(dx * dx + dy * dy)
@@ -152,7 +149,6 @@ end
 
 function Player:clearFrameEvents()
     self.justDashed = false
-    self.justHit = false
 end
 
 return Player

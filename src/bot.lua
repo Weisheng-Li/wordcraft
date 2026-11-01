@@ -6,8 +6,8 @@
 --   1. Dodge: a laser aimed at me with a clear line -> run behind a wall.
 --      (No reflex dash: people rarely manage one, so the bot saves its
 --      dash for word races instead.)
---   2. Use my armed trap: walk up for "close", stand still for "still",
---      dash for "dash".
+--   2. Use my armed trap whenever it can fire: walk up for "close", stand
+--      still for "still", dash for "dash". While it recharges, collect words.
 --   3. Keep my own charging attack in line of sight of the enemy.
 --   4. Stay out of an enemy "close" trap.
 --   5. Grab words: the best fitting word per path distance, a bonus for
@@ -273,14 +273,15 @@ function Bot:plan()
     local close = t.conditions.closeDistance
     local apart = dist(me.x, me.y, enemy.x, enemy.y)
 
-    -- 2. My armed trap.
+    -- 2. My armed trap, when it can fire (while it recharges or casts,
+    -- go collect words instead).
     local trap = book.trap
     if trap then
-        if has(trap.conditions, "close") then
+        if has(trap.conditions, "close") and book:trapReady("close") then
             return self:walkTo(enemy.x, enemy.y)
-        elseif has(trap.conditions, "still") then
+        elseif has(trap.conditions, "still") and book:trapReady("still") then
             return IDLE
-        elseif has(trap.conditions, "dash") and me.dashCooldown <= 0 then
+        elseif has(trap.conditions, "dash") and book:trapReady("dash") and me.dashCooldown <= 0 then
             local seen = g.arena:lineOfSight(me.x, me.y, enemy.x, enemy.y)
             if seen or not has(trap.spells, "attack") then
                 return { x = me.aimX, y = me.aimY, dash = true }

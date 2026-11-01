@@ -222,8 +222,7 @@ function Game:update(dt, inputs)
     end
 
     self.clock = self.clock + dt
-    -- Order matters: movement sets "dashed", lasers set "hit", then
-    -- spellbooks read both for their trap conditions.
+    -- Order matters: movement sets "dashed" before spellbooks read it
     for k, p in ipairs(self.players) do p:update(dt, inputs[k], t, self.arena) end
     self.wordfield:update(dt, t, self.players, self.spellbooks, self.rand)
     self:updateLasers(dt)
