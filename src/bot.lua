@@ -14,6 +14,9 @@
 --      denying words the enemy needs, skipping ones they'll reach first.
 --      If the enemy is racing me to it and it's within a dash, dash.
 --   6. Otherwise wait on an incoming wave's marker.
+-- On top of these, "human limits" (their own section below) weaken the bot
+-- on purpose: a reaction time, sometimes missing an aim ray, greed for a
+-- nearby word over cover, and a moment to read each new word.
 -- Numbers live under `bot` in tuning.json. A profile (from `botProfiles`,
 -- for simulation A/B runs) overrides any of them, and can list
 -- `avoidWords` the bot never picks up.
@@ -43,7 +46,8 @@ function Bot.new(id, rand, profile)
     self.id = id
     self.rand = rand
     self.profile = profile or {}
-    self.seen = setmetatable({}, { __mode = "k" }) -- laser -> time the bot noticed it
+    self.seen = setmetatable({}, { __mode = "k" })     -- laser -> { time, missed } (human limits)
+    self.wordSeen = setmetatable({}, { __mode = "k" }) -- word -> time it first showed up (human limits)
     self.time = 0
     return self
 end
@@ -170,9 +174,8 @@ function Bot:threat()
 end
 
 function Bot:dodge(laser)
-    local me, caster, arena, t = self.me, laser.caster, self.game.arena, self.tuning
-    self.seen[laser] = self.seen[laser] or self.time
-    if self.time - self.seen[laser] < self.cfg.reactionTime then return nil end
+    local me, caster, arena = self.me, laser.caster, self.game.arena
+    if not self:noticed(laser) then return nil end -- human limit
     if me:isDashing() then return nil end
 
     -- Find the nearest spot the caster can't see (where I am, if hidden).
@@ -180,9 +183,63 @@ function Bot:dodge(laser)
         if arena:lineOfSight(caster.x, caster.y, x, y) then return math.huge end
         return d
     end)
-    if x then return self:walkTo(x, y) end
-    return nil
+    if not x or self:tooGreedyToHide(self:pathDist(self.field, x, y)) then return nil end -- human limit
+    return self:walkTo(x, y)
 end
+
+----------------------------------------------------------------------------
+-- Human limits: these only exist to make the bot play like a person, and
+-- each one makes it weaker. Without them it spots every aim ray at once,
+-- always finds cover in time, and reads a new wave the frame it lands.
+-- Numbers live under `bot.human` in tuning.json. A profile can override
+-- some of them, or set `"human": false` to turn them all off (a future
+-- difficulty setting would tune these).
+----------------------------------------------------------------------------
+
+-- The `bot.human` numbers for this bot, or nil when its profile turns them off.
+function Bot:human()
+    local h = self.profile.human
+    if h == false then return nil end
+    return setmetatable(h or {}, { __index = self.tuning.bot.human })
+end
+
+-- Reaction time and missed aim rays: has the bot noticed this laser, and
+-- had time to react? Each laser has a `missChance` of going unnoticed
+-- (looking at the words instead), decided once when it first appears.
+function Bot:noticed(laser)
+    local h = self:human()
+    if not h then return true end
+    local s = self.seen[laser]
+    if not s then
+        s = { time = self.time, missed = self.rand() < h.missChance }
+        self.seen[laser] = s
+    end
+    return not s.missed and self.time - s.time >= h.reactionTime
+end
+
+-- Greed: keep going for a word instead of hiding, when it's within
+-- `greedRange` and closer than the cover.
+function Bot:tooGreedyToHide(coverDist)
+    local h = self:human()
+    if not h then return false end
+    local book = self.game.spellbooks[self.me.id]
+    for _, w in ipairs(self.game.wordfield.words) do
+        if book:canAccept(w.def) and self:canRead(w) then
+            local d = self:pathDist(self.field, w.x, w.y)
+            if d <= h.greedRange and d < coverDist then return true end
+        end
+    end
+    return false
+end
+
+-- Reading time: a word is ignored for `readTime` after it lands
+-- (Bot:update notes when each word first shows up).
+function Bot:canRead(word)
+    local h = self:human()
+    return not h or self.time - self.wordSeen[word] >= h.readTime
+end
+
+----------------------------------------------------------------------------
 
 -- Dash at a word when the enemy wants it too and is about as close, and
 -- one straight dash along one of the 8 key directions passes over it
@@ -257,7 +314,7 @@ function Bot:plan()
     -- 5. Words.
     local best, bestScore = nil, 0
     for _, w in ipairs(g.wordfield.words) do
-        if book:canAccept(w.def) and not has(self.cfg.avoidWords, w.def.id)
+        if self:canRead(w) and book:canAccept(w.def) and not has(self.cfg.avoidWords, w.def.id) -- canRead: human limit
             and not (avoid and dist(w.x, w.y, enemy.x, enemy.y) < keepOff) then
             local mine = self:pathDist(self.field, w.x, w.y)
             if mine < math.huge then
@@ -301,6 +358,7 @@ function Bot:update(dt, game)
     local arena = game.arena
     self.field, self.parent = flood(arena, tileOf(arena, self.me.x, self.me.y, self.tuning))
     self.enemyField = flood(arena, tileOf(arena, self.enemy.x, self.enemy.y, self.tuning))
+    for _, w in ipairs(game.wordfield.words) do self.wordSeen[w] = self.wordSeen[w] or self.time end
 
     local laser = self:threat()
     local input = laser and self:dodge(laser)

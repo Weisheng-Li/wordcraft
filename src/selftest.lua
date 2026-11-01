@@ -557,9 +557,10 @@ local function botStep(g, bot, seconds, p1)
     for _ = 1, n do g:update(DT, { p1 or IDLE, bot:update(DT, g) }) end
 end
 
--- A bot with fixed "random" rolls.
-local function steadyBot()
-    return Bot.new(2, function() return 0.5 end)
+-- A bot with fixed "random" rolls. Human limits are off unless a test
+-- passes its own profile, so rule tests don't wait on reaction times.
+local function steadyBot(profile, roll)
+    return Bot.new(2, function() return roll or 0.5 end, profile or { human = false })
 end
 
 tests["bot walks around a wall to a word it can use"] = function(g)
@@ -632,6 +633,53 @@ tests["bot doesn't dash at a laser, it hides behind a wall"] = function(g)
     botStep(g, bot, g.data.tuning.spells.telegraph + 0.1)
     assert(p2.hp == 10, "bot should take cover, hp " .. p2.hp)
     assert(p2.dashCooldown == 0, "bot shouldn't dash")
+end
+
+-- Human limits (they weaken the bot on purpose).
+local function openRowDuel(g)
+    local p1, p2 = g.players[1], g.players[2]
+    p1.x, p1.y = g.arena:tileCenter(2, 3)
+    p2.x, p2.y = g.arena:tileCenter(13, 3)
+    give(g, 1, "combo"); fill(g, 1, "attack", "attack")
+    return p1, p2
+end
+
+tests["human limits: the bot reacts to an aim ray only after its reaction time"] = function(g)
+    local bot = steadyBot({})
+    local _, p2 = openRowDuel(g)
+    local x0, y0 = p2.x, p2.y
+    botStep(g, bot, g.data.tuning.bot.human.reactionTime - 0.1)
+    assert(p2.x == x0 and p2.y == y0, "hasn't reacted yet")
+    botStep(g, bot, 0.2)
+    assert(p2.x ~= x0 or p2.y ~= y0, "now heading for cover")
+end
+
+tests["human limits: an aim ray the bot misses gets no reaction"] = function(g)
+    local bot = steadyBot({}, 0.05) -- the roll lands under missChance
+    local _, p2 = openRowDuel(g)
+    botStep(g, bot, g.data.tuning.spells.telegraph + 0.1)
+    assert(p2.hp == 8, "missed the aim ray, so both beams hit; hp " .. p2.hp)
+end
+
+tests["human limits: a word right next to the bot beats running for cover"] = function(g)
+    local bot = steadyBot({ human = { readTime = 0 } })
+    local _, p2 = openRowDuel(g)
+    give(g, 2, "combo")
+    g.wordfield.words = { { def = g.data.words.byId.attack, x = p2.x - 14, y = p2.y } }
+    botStep(g, bot, 0.8)
+    assert(#g.wordfield.words == 0, "went for the word first")
+end
+
+tests["human limits: a new word is ignored for the reading time"] = function(g)
+    local bot = steadyBot({})
+    local p = g.players[2]
+    local x0 = p.x
+    g.wordfield.words = { { def = g.data.words.byId.attack, x = p.x - 40, y = p.y } }
+    give(g, 2, "combo")
+    botStep(g, bot, g.data.tuning.bot.human.readTime - 0.1)
+    assert(p.x == x0, "still reading")
+    botStep(g, bot, 1.5)
+    assert(#g.wordfield.words == 0, "then picks it up")
 end
 
 tests["bot walks up to the enemy with a close trap armed"] = function(g)

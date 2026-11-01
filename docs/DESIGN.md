@@ -258,7 +258,7 @@ A sandbox for testing the UI and how templates and words combine. Later it can h
 - **`F3`** hands P2 to a rule-based bot, or gives it back (`love . --bot` starts with it on). There's no menu or on-screen indicator yet. The bot only plays in versus.
 - It presses the same keys a player would (`{ x, y, dash }` each frame) and only reads the game state, so it plays by the same rules. Code: `src/bot.lua`.
 - **Rules, highest priority first:**
-  1. **Dodge.** For a laser aimed at it with a clear line (that its shield charges can't soak), it reacts after `0.25 s` and runs to the nearest spot the caster can't see. It **never dashes through a laser**: playtesting showed that reflex dash felt unnatural, since people rarely manage one.
+  1. **Dodge.** For a laser aimed at it with a clear line (that its shield charges can't soak), once it has noticed the aim ray (see human limits below) it runs to the nearest spot the caster can't see. It **never dashes through a laser**: playtesting showed that reflex dash felt unnatural, since people rarely manage one.
   2. **Use its own trap:** walk up to the enemy for `close`, stand still for `still`, dash for `dash` (once it can see the enemy, if the trap attacks).
   3. **Keep line of sight** while its own attack is charging, by stepping out from behind a wall.
   4. **Stay out of an enemy `close` trap** (its range plus `10 px`).
@@ -266,7 +266,14 @@ A sandbox for testing the UI and how templates and words combine. Later it can h
   6. Otherwise it waits on the nearest marker of the incoming wave.
 - Paths go over the 16 px tile grid and cut corners wherever the straight line is clear.
 - **8 directions only, like a keyboard.** Its input is snapped to the 8 key directions, so it zigzags toward awkward angles just as a player does. It race-dashes only when one of those 8 lines passes within pickup range of the word. Before this the bot steered and dashed at any angle: its paths were up to ~8% shorter, and its race dashes never missed. Playtesting showed it felt faster than a person. The first simulation baseline (2026-10-31) was taken before this change.
-- Numbers live under `bot` in `tuning.json`. `reactionTime` (how fast it runs for cover) and `raceRatio` (how readily it race-dashes) are the main difficulty settings.
+- **Human limits (weaken it on purpose).** Even at human reaction time, the bot hid perfectly every time and read each new wave the frame it landed, so it was very hard to hit and out-picked a person. These limits sit in their own section of `src/bot.lua`, with numbers under `bot.human` in `tuning.json`:
+  - **Reaction time `0.45 s`** before it acts on an aim ray (was 0.25 s).
+  - **Misses `10%` of aim rays** completely, as if looking at the words. Decided once per ray. (Tried at 25%: it got too weak, and missing that often looked odd.)
+  - **Greed:** if a word it can use is within `24 px` and closer than cover, it grabs the word instead of hiding.
+  - **Reading time `0.5 s`:** a word that just landed is ignored for that long.
+
+  A profile can override them, or set `"human": false` for the bot without them (profile `sharp`). That's the hook for difficulty levels later.
+- Numbers live under `bot` in `tuning.json`; the human limits under `bot.human`. Those limits and `raceRatio` (how readily it race-dashes) are the main difficulty settings.
 - Bot vs bot runs in the self-test (`bot vs bot plays a full round`) and prints words collected and HP.
 - **Profiles** (`botProfiles` in `tuning.json`) override any `bot` number for one side and can list `avoidWords` the bot never picks up, e.g. `noAccelerate`. They're for simulation A/B runs.
 

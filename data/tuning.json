@@ -55,7 +55,12 @@
     "countdown": 3
   },
   "bot": {
-    "reactionTime": 0.25,
+    "human": {
+      "reactionTime": 0.45,
+      "missChance": 0.1,
+      "greedRange": 24,
+      "readTime": 0.5
+    },
     "raceRatio": 1.5,
     "raceMinGap": 8,
     "trapMargin": 10,
@@ -65,6 +70,7 @@
     "lostCause": 0.3
   },
   "botProfiles": {
+    "sharp": { "human": false },
     "noAccelerate": { "avoidWords": ["accelerate"] },
     "noShield": { "avoidWords": ["shield"] }
   }

@@ -120,6 +120,12 @@ Some value is indirect. Speed, for example, means more words, which means more c
 
 Newest first. Each entry records the bot version, because bot changes shift every number. Raw numbers for every gameplay commit are in the history of [STATS.md](STATS.md).
 
+### 2026-11-01 — bot with human limits
+
+- **Setup:** small run (1 min, 201 rounds), default vs default. The bot now has human limits (0.45 s reaction, misses 10% of aim rays, greed for words within 24 px, 0.5 s reading time). Traps still fire once.
+- **Reading:** beams land much more often: 31.9±0.5% hit (was 24.6) and 55% stopped by walls (was 63). Rounds are shorter, 127±3 s (was 159). `when` is still the weakest template (ret/word 0.10, picks 45.5%); `repeat` the strongest (0.65). Against the old sharp bot, an earlier A/B (missChance 0.25) lost 16% to 84%.
+- **P1/P2 again leans P2:** 42.8/57.2 ±3.5 (first baseline 45.8/54.0, last run 49.1/50.9). Twice now at about 2 standard errors. Worth a big run to settle it.
+
 ### 2026-10-31 — 8-direction bot, first STATS.md
 
 - **Setup:** small run (1 min, 159 rounds), default vs default, same rules as the first baseline. The bot now moves and dashes in 8 directions only.
