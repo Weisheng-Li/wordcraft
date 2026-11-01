@@ -264,6 +264,7 @@ A sandbox for testing the UI and how templates and words combine. Later it can h
   5. **Grab words.** It goes for the fitting word with the best value per path distance. `attack` and words the enemy also needs are worth more, unless the enemy is clearly closer. **Race dash:** when the enemy wants the same word and is no more than 1.5× as far from it, and one straight dash reaches it, the bot dashes at it. That's how people use dash.
   6. Otherwise it waits on the nearest marker of the incoming wave.
 - Paths go over the 16 px tile grid and cut corners wherever the straight line is clear.
+- **8 directions only, like a keyboard.** Its input is snapped to the 8 key directions, so it zigzags toward awkward angles just as a player does. It race-dashes only when one of those 8 lines passes within pickup range of the word. Before this the bot steered and dashed at any angle: its paths were up to ~8% shorter, and its race dashes never missed. Playtesting showed it felt faster than a person. The first simulation baseline (2026-10-31) was taken before this change.
 - Numbers live under `bot` in `tuning.json`. `reactionTime` (how fast it runs for cover) and `raceRatio` (how readily it race-dashes) are the main difficulty settings.
 - Bot vs bot runs in the self-test (`bot vs bot plays a full round`) and prints words collected and HP.
 - **Profiles** (`botProfiles` in `tuning.json`) override any `bot` number for one side and can list `avoidWords` the bot never picks up, e.g. `noAccelerate`. They're for simulation A/B runs.

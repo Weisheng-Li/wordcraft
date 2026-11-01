@@ -1,5 +1,6 @@
 -- Bot: a rule-based opponent that plays a wizard by producing the same
 -- { x, y, dash } input a keyboard would. Pure logic; it only reads Game.
+-- Like a keyboard, it only moves and dashes in 8 directions.
 --
 -- Rules, highest priority first:
 --   1. Dodge: a laser aimed at me with a clear line -> run behind a wall.
@@ -21,6 +22,20 @@ local Bot = {}
 Bot.__index = Bot
 
 local IDLE = { x = 0, y = 0, dash = false }
+
+-- The 8 directions a keyboard player can press (x, y in -1..1).
+local DIRS = {
+    { 1, 0 }, { 1, 1 }, { 0, 1 }, { -1, 1 }, { -1, 0 }, { -1, -1 }, { 0, -1 }, { 1, -1 },
+}
+
+-- Snap any direction to the nearest of the 8 key directions, so the bot
+-- walks and dashes by the same rules as a keyboard player.
+local function snap8(input)
+    if input.x == 0 and input.y == 0 then return input end
+    local k = math.floor(math.atan2(input.y, input.x) / (math.pi / 4) + 0.5) % 8
+    local d = DIRS[k + 1]
+    return { x = d[1], y = d[2], dash = input.dash }
+end
 
 -- profile: optional table of overrides for tuning.bot.
 function Bot.new(id, rand, profile)
@@ -170,16 +185,28 @@ function Bot:dodge(laser)
 end
 
 -- Dash at a word when the enemy wants it too and is about as close, and
--- one straight dash reaches it (but walking wouldn't take a moment anyway).
+-- one straight dash along one of the 8 key directions passes over it
+-- (but walking wouldn't take a moment anyway). Returns that direction.
 function Bot:raceDash(word, enemyBook)
     local me, t = self.me, self.tuning
-    if me.dashCooldown > 0 or me:isDashing() or not enemyBook:canAccept(word.def) then return false end
+    if me.dashCooldown > 0 or me:isDashing() or not enemyBook:canAccept(word.def) then return nil end
     local mine = dist(me.x, me.y, word.x, word.y)
     local theirs = dist(self.enemy.x, self.enemy.y, word.x, word.y)
-    local reach = t.dash.distance + t.words.pickupRadius - 2
-    return mine <= reach and mine > t.words.pickupRadius + self.cfg.raceMinGap
-        and theirs <= mine * self.cfg.raceRatio
-        and boxClear(self.game.arena, me.x, me.y, word.x, word.y, t)
+    local r = t.words.pickupRadius - 2
+    if mine <= r + self.cfg.raceMinGap or theirs > mine * self.cfg.raceRatio then return nil end
+    local wx, wy = word.x - me.x, word.y - me.y
+    local best, bestOff
+    for _, d in ipairs(DIRS) do
+        local len = math.sqrt(d[1] * d[1] + d[2] * d[2])
+        local ux, uy = d[1] / len, d[2] / len
+        local along = wx * ux + wy * uy        -- how far along the dash line
+        local off = math.abs(wx * uy - wy * ux) -- how far the word is to the side
+        if along > 0 and along <= t.dash.distance + r and off <= r and (not best or off < bestOff) then
+            best, bestOff = d, off
+        end
+    end
+    if best and boxClear(self.game.arena, me.x, me.y, word.x, word.y, t) then return best end
+    return nil
 end
 
 -- 2-6. Everything that isn't dodging.
@@ -250,9 +277,9 @@ function Bot:plan()
         end
     end
     if best then
-        local input = self:walkTo(best.x, best.y)
-        if self:raceDash(best, enemyBook) then input = { x = input.x, y = input.y, dash = true } end
-        return input
+        local dir = self:raceDash(best, enemyBook)
+        if dir then return { x = dir[1], y = dir[2], dash = true } end
+        return self:walkTo(best.x, best.y)
     end
 
     -- 6. Wait on the nearest marker of the incoming wave.
@@ -277,7 +304,7 @@ function Bot:update(dt, game)
 
     local laser = self:threat()
     local input = laser and self:dodge(laser)
-    return input or self:plan() or IDLE
+    return snap8(input or self:plan() or IDLE)
 end
 
 return Bot

@@ -102,7 +102,7 @@ Newest first. Each entry records the bot version, because bot changes shift ever
 
 - **Setup:** 400 rounds, seed 1, default vs default, cap 300 s. A/B: 200 rounds each with P1 `noAccelerate` (seed 2) and P1 `noShield` (seed 3).
 - **Game:** template timeouts 7.5 / 12 / 16.5 s, waves every 6 s.
-- **Bot:** hides behind walls from lasers (no reflex dash), dashes only to win word races. It still moves and dashes in **any direction**; a keyboard player only has 8. Limiting the bot to 8 directions is the next change, so rerun after it.
+- **Bot:** hides behind walls from lasers (no reflex dash), dashes only to win word races. It still moves and dashes in **any direction**; a keyboard player only has 8. It was limited to 8 directions right after this run. That wasn't rerun, since the change isn't expected to move these findings much. Rerun before relying on movement-sensitive numbers (word races, pickup share).
 
 | Finding | Numbers | Reading |
 |---|---|---|

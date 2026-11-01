@@ -595,6 +595,33 @@ tests["bot dashes to win a word the enemy wants too"] = function(g)
     assert(p2.dashCooldown > 0, "bot should have dashed")
 end
 
+tests["bot only presses the 8 keyboard directions"] = function(g)
+    local bot = steadyBot()
+    local p = g.players[2]
+    g.wordfield.words = { { def = g.data.words.byId.attack, x = p.x - 70, y = p.y + 37 } } -- awkward angle
+    give(g, 2, "combo")
+    for _ = 1, 120 do
+        local input = bot:update(DT, g)
+        for _, v in ipairs({ input.x, input.y }) do
+            assert(v == -1 or v == 0 or v == 1, "analog input " .. tostring(v))
+        end
+        g:update(DT, { IDLE, input })
+    end
+end
+
+tests["bot doesn't race-dash when no key direction lines up with the word"] = function(g)
+    local bot = steadyBot()
+    local p1, p2 = g.players[1], g.players[2]
+    local _, y = g.arena:tileCenter(1, 3)
+    p2.x, p2.y = 280, y
+    p1.x, p1.y = 230, y - 25
+    -- 35 px left, 20 px up: about 30 degrees, off both the row and the diagonal.
+    g.wordfield.words = { { def = g.data.words.byId.attack, x = 245, y = y - 20 } }
+    give(g, 1, "combo"); give(g, 2, "combo")
+    botStep(g, bot, DT)
+    assert(p2.dashCooldown == 0, "a keyboard dash would miss, so no dash yet")
+end
+
 tests["bot doesn't dash at a laser, it hides behind a wall"] = function(g)
     local bot = steadyBot()
     local p1, p2 = g.players[1], g.players[2]
