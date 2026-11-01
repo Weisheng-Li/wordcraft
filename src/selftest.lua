@@ -778,6 +778,17 @@ tests["sim: a short bot vs bot batch runs and reports"] = function(g)
     assert(#lines > 10, "report printed")
 end
 
+tests["sim: reading load counts template words, blanks included"] = function(g)
+    local t = g.data.tuning
+    assert(Spellbook.wordCount(template(g, "when")) == 4, "when ___, cast ___")
+    assert(Spellbook.wordCount(template(g, "combo")) == 4, "cast ___ and ___")
+    assert(Spellbook.wordCount(template(g, "repeat", 3)) == 4, "repeat 3: cast ___")
+    local big = Spellbook.merge(template(g, "when"), template(g, "combo"), t)
+    assert(Spellbook.wordCount(big) == 7, "when ___, cast ___, ___ and ___: " .. Spellbook.wordCount(big))
+    local R = require("src.sim").playRound(g.data, 1, { seed = 7, cap = 30 })
+    assert(R.load.time > 0 and R.load.template > 0 and #R.load.samples > 0, "load sampled")
+end
+
 tests["sim: a round record survives encoding (worker threads send them as text)"] = function(g)
     local Sim = require("src.sim")
     local R = Sim.playRound(g.data, 3, { seed = 7, cap = 60 })

@@ -2,6 +2,8 @@
 -- gameplay live here. Top-down "2.5D": everything standing on the floor is
 -- y-sorted so lower things draw in front.
 
+local Spellbook = require("src.spellbook")
+
 local Render = {}
 
 local function hex(s)
@@ -468,33 +470,12 @@ end
 
 ---------------------------------------------------------------- HUD
 
--- Template as a list of text and blank tokens, e.g.
--- "when [close] or [___], repeat 3: cast [attack] and [___]".
+-- Template as a list of text and blank tokens (Spellbook.tokens).
 local function templateTokens(book, words)
     local tpl = book.template
     -- No template: "..." in versus (one is about to be dealt); a hint in training.
     if not tpl then return { { text = book.sandbox and "pick up a template tile" or "..." } } end
-    local function blank(b)
-        return { blank = b.type, text = b.word and words.byId[b.word].label or "___", filled = b.word and true }
-    end
-    local toks = {}
-    local function add(t) toks[#toks + 1] = t end
-    if #tpl.conditions > 0 then
-        add({ text = "when " })
-        for i, b in ipairs(tpl.conditions) do
-            if i > 1 then add({ text = " or " }) end
-            add(blank(b))
-        end
-        add({ text = ", " })
-    end
-    if tpl.n then add({ text = "repeat " .. tpl.n .. ": " }) end
-    add({ text = "cast " })
-    local n = #tpl.spells
-    for i, b in ipairs(tpl.spells) do
-        if i > 1 then add({ text = (i == n) and " and " or ", " }) end
-        add(blank(b))
-    end
-    return toks
+    return Spellbook.tokens(tpl, function(id) return words.byId[id].label end)
 end
 
 -- Split text tokens into words so long templates can wrap between them.

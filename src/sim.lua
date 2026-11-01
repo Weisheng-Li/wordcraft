@@ -19,9 +19,11 @@
 --   4. Word spawning: time between waves, early waves, one-sided boards
 --      (only one player can use anything on the floor).
 --   5. Combat: laser results, shield charges, accelerate.
+--   6. Reading load: words in both templates plus words on the floor.
 
 local Bot = require("src.bot")
 local Game = require("src.game")
+local Spellbook = require("src.spellbook")
 
 local Sim = {}
 
@@ -45,6 +47,7 @@ local function newStats()
         accel = { gained = 0, time = 0, stackTime = 0, picksFast = 0, picksNormal = 0, playerTime = 0 },
         waves = { count = 0, early = 0, leftovers = 0, gaps = {} },
         oneSided = { time = 0, fightTime = 0, stretches = {} },
+        load = { time = 0, template = 0, field = 0, samples = {} }, -- words to read (time-weighted sums)
     }
 end
 
@@ -166,6 +169,7 @@ function Sim.playRound(data, roundNo, opts)
     end
 
     local cap = opts.cap
+    local nextSample = 0 -- next reading-load sample (every 0.5 s)
     while g.state ~= "over" and g.clock < cap do
         frame = {}
         local inputs = { bots[1]:update(DT, g), bots[2]:update(DT, g) }
@@ -179,6 +183,19 @@ function Sim.playRound(data, roundNo, opts)
             end
             S.accel.playerTime = S.accel.playerTime + 2 * DT
             S.oneSided.fightTime = S.oneSided.fightTime + DT
+
+            local tplWords, fieldWords = 0, #g.wordfield.words
+            for _, book in ipairs(g.spellbooks) do
+                if book.template then tplWords = tplWords + Spellbook.wordCount(book.template) end
+            end
+            local L = S.load
+            L.time = L.time + DT
+            L.template = L.template + DT * tplWords
+            L.field = L.field + DT * fieldWords
+            if g.clock >= nextSample then -- for the spread
+                nextSample = nextSample + 0.5
+                L.samples[#L.samples + 1] = tplWords + fieldWords
+            end
 
             local side, mix = boardSide()
             if stretch and side ~= stretch.side then
@@ -262,6 +279,8 @@ function Sim.merge(records)
         append(S.waves.gaps, R.waves.gaps)
         addInto(S.oneSided, R.oneSided)
         append(S.oneSided.stretches, R.oneSided.stretches)
+        addInto(S.load, R.load)
+        append(S.load.samples, R.load.samples)
     end
     return S
 end
@@ -492,6 +511,20 @@ local function report(records, S, out)
         avg(a.stackTime, a.time)))
     out(string.format("    pickups per minute: %.1f while accelerated vs %.1f normal (x%.2f)",
         fastRate * 60, normalRate * 60, avg(fastRate, normalRate)))
+
+    -- 6. Reading load
+    local samples = S.load.samples
+    local function loadOf(part)
+        return numSE("%.1f", ratio(records, function(R)
+            local L = R.load
+            return part and L[part] or L.template + L.field, L.time
+        end))
+    end
+    out("")
+    out("6. Reading load  (words in both templates, blanks included, + words on the floor)")
+    out(string.format("  avg %s words: templates %s, floor %s", loadOf(), loadOf("template"), loadOf("field")))
+    out(string.format("  median %d, 10%% %d, 90%% %d, max %d",
+        quantile(samples, 0.5), quantile(samples, 0.1), quantile(samples, 0.9), quantile(samples, 1)))
 end
 
 local CSV_COLUMNS = { "round", "player", "shape", "level", "result", "words", "window",

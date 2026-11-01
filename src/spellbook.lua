@@ -108,6 +108,47 @@ function Spellbook:blanks()
     return list
 end
 
+-- A template as the HUD writes it: a list of text tokens and blank tokens,
+-- e.g. "when [close] or [___], repeat 3: cast [attack] and [___]".
+-- `label(id)` names a filled word.
+function Spellbook.tokens(tpl, label)
+    local function blank(b)
+        return { blank = b.type, text = b.word and label(b.word) or "___", filled = b.word and true }
+    end
+    local toks = {}
+    local function add(t) toks[#toks + 1] = t end
+    if #tpl.conditions > 0 then
+        add({ text = "when " })
+        for i, b in ipairs(tpl.conditions) do
+            if i > 1 then add({ text = " or " }) end
+            add(blank(b))
+        end
+        add({ text = ", " })
+    end
+    if tpl.n then add({ text = "repeat " .. tpl.n .. ": " }) end
+    add({ text = "cast " })
+    local n = #tpl.spells
+    for i, b in ipairs(tpl.spells) do
+        if i > 1 then add({ text = (i == n) and " and " or ", " }) end
+        add(blank(b))
+    end
+    return toks
+end
+
+-- Words a player reads in a template: each blank (filled or not) counts
+-- as one, plus every word of the text around them ("repeat 3" is two).
+function Spellbook.wordCount(tpl)
+    local count = 0
+    for _, tok in ipairs(Spellbook.tokens(tpl, tostring)) do
+        if tok.blank then
+            count = count + 1
+        else
+            count = count + select(2, tok.text:gsub("%w+", ""))
+        end
+    end
+    return count
+end
+
 -- Blank types still open in the current template (may contain duplicates).
 function Spellbook:openTypes()
     local types = {}

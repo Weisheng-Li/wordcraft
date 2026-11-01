@@ -116,6 +116,14 @@ For every beam: hit / blocked by shield / dodged by dash / stopped by a wall. Ro
 | Shield charges | Gained per round, share used (blocked a beam), share that expired unused |
 | Accelerate | Stacks gained per round, share of the time it's active, average stacks while active, **pickups per minute while accelerated vs normal** |
 
+### 6. Reading load
+How much text a player has to take in at once: the words in **both** players' templates plus the words on the floor. Template words count every word of the HUD text, blanks included, filled or not: `when ___, cast ___` is 4, `repeat 3: cast ___` is 4. The trap row isn't counted.
+
+| Metric | Notes |
+|---|---|
+| Average | Over fight time, with the template and floor parts split out |
+| Median, 10%, 90%, max | From a sample every 0.5 s. The 90% mark is the busy moments. |
+
 ### CSV columns
 One row per finished or timed-out template: `round, player, shape, level, result (cast / trap / timeout), words, window, damage, blocked, fired (trap firings), conditions (a trap's condition set), mine, theirs`. Use it for any group-by the report doesn't do.
 
