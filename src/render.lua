@@ -94,7 +94,8 @@ end
 
 local function updateMovementFx(dt, game)
     for k, p in ipairs(game.players) do
-        local speed = math.sqrt(p.vx * p.vx + p.vy * p.vy)
+        -- Once the round is over players are frozen, but keep their last velocity.
+        local speed = game.state == "over" and 0 or math.sqrt(p.vx * p.vx + p.vy * p.vy)
         local dashing = p:isDashing()
         local dirX, dirY = 0, 0
         if speed > 0 then dirX, dirY = p.vx / speed, p.vy / speed end
@@ -541,11 +542,31 @@ local function effectText(book, words)
         return table.concat(out, sep)
     end
     if book.trap then
+        -- No "trap:" prefix: the rune under the wizard already says so,
+        -- and a level-3 trap needs the room.
         local tr = book.trap
-        return "trap: " .. labels(tr.conditions, "/") .. " > " .. labels(tr.spells, "+")
+        return labels(tr.conditions, "/") .. " > " .. labels(tr.spells, "+")
             .. (tr.n > 1 and (" x" .. tr.n) or "")
     end
     return "" -- shields, speed and casting are shown on the wizard instead
+end
+
+-- A 5x4 pixel heart that labels the HP pips.
+local HEART = { ".#.#.", "#####", ".###.", "..#.." }
+local function drawHeart(x, y)
+    setColor(C.hp)
+    for r, row in ipairs(HEART) do
+        for c = 1, #row do
+            if row:sub(c, c) == "#" then love.graphics.rectangle("fill", x + c - 1, y + r - 1, 1, 1) end
+        end
+    end
+end
+
+-- `text`, cut down with "..." if it's wider than `w`.
+local function fitText(text, font, w)
+    if font:getWidth(text) <= w then return text end
+    while #text > 0 and font:getWidth(text .. "...") > w do text = text:sub(1, -2) end
+    return text .. "..."
 end
 
 local function drawBar(x, y, w, frac, col)
@@ -601,23 +622,36 @@ local function drawPanel(game, k, x)
     -- Flash the panel when a template stacks up a level.
     if levelFlash[k] > 0 then
         setColor(levelCol, levelFlash[k] * 0.6)
-        love.graphics.rectangle("fill", x - 3, 0, PANEL_W + 2, 30)
+        love.graphics.rectangle("fill", x - 3, 0, PANEL_W + 2, 28)
     end
 
-    drawTokens(templateTokens(book, words), x, 1, PANEL_W - 4, levelCol)
+    -- Rows in the 44 px above the arena: the template (up to 3 lines), the
+    -- trap text right under its last line, and at the bottom one row with
+    -- the heart + HP pips on the left and the timeout bar on the right.
+    -- (At least 2 lines' worth, so the trap row doesn't jump around while
+    -- the next template is being dealt.)
+    local lines = math.max(2, drawTokens(templateTokens(book, words), x, 0, PANEL_W - 4, levelCol))
 
-    -- HP pips + effect text
-    for i = 1, t.player.hp do
-        setColor(i <= p.hp and C.hp or C.hpEmpty)
-        love.graphics.rectangle("fill", x + (i - 1) * 5, 32, 4, 4)
-    end
+    -- Effect text gets the whole row, so even a level-3 trap fits; anything
+    -- longer is cut at the panel edge rather than running into the other panel.
     setColor(C.dim)
     love.graphics.setFont(fonts.small)
-    love.graphics.print(effectText(book, words), x + t.player.hp * 5 + 4, 29)
+    local text, room = effectText(book, words), PANEL_W + 4 -- up to the next panel
+    if fonts.small:getWidth(text) > room then text = text:gsub(" > ", ">") end
+    -- With 2 template lines this leaves even 6 px gaps above and below the
+    -- text's ink (y 25-31); a 3rd line pushes it down as far as it can go.
+    love.graphics.print(fitText(text, fonts.small, room), x, math.min(lines * 9 + 6, 29))
+
+    drawHeart(x, 38)
+    for i = 1, t.player.hp do
+        setColor(i <= p.hp and C.hp or C.hpEmpty)
+        love.graphics.rectangle("fill", x + 8 + (i - 1) * 5, 38, 4, 4)
+    end
 
     -- Template timeout, coloured by stack level (no timeouts in training)
+    local barX = x + 8 + t.player.hp * 5 + 6
     local tl = book.template and book.template.timeLeft / book.template.timeTotal or 0
-    if not book.sandbox then drawBar(x, 40, PANEL_W - 12, tl, levelCol) end
+    if not book.sandbox then drawBar(barX, 39, x + PANEL_W - 4 - barX, tl, levelCol) end
 end
 
 -- Training guide: a title, up to two lines of instructions, and a separate

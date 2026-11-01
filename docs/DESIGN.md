@@ -147,7 +147,7 @@ Every status is drawn on the wizard, so both players can read it without looking
 |---|---|
 | Shield charges | One cyan **ring** around the wizard per charge, up to 5. Above 5 it becomes **one bold ring with the count** (e.g. `x6`). Display only: there is no cap on charges. |
 | Accelerate | **Speed lines** trailing behind, two more per stack |
-| Armed trap | A cyan **rune circle** turning on the floor under the wizard. The HUD also names its condition, e.g. `trap: hit > shield`. |
+| Armed trap | A cyan **rune circle** turning on the floor under the wizard. The HUD also spells it out, e.g. `hit > shield`. |
 | Effect about to expire | In the last `1.5 s` before the current template times out (which ends the effect window), the **shield rings, speed lines and trap rune flash 3 times** at a steady rate (dim, then back on), then vanish. In a fast game the expiry was easy to miss. (A version that sped up toward the end felt like too much.) Finishing the next template also ends the effect, but the player chooses that, so it gets no warning. Not shown in training (no timeouts). Tuning: `templates.expiryWarning`, `templates.expiryFlashes`. |
 | `close` in play | A plain **ring in the owner's colour** around that wizard at the real threshold (56 px), shown while the condition is filled into their template or part of an armed trap. |
 | Casting | **Casting pose** (see below) |
@@ -212,7 +212,7 @@ A single round is enough for the POC.
 ## 11. HUD and readability — Proposed
 
 - Each player's template is shown at the top of the screen, P1 on the left and P2 on the right. Blanks are colour-coded by type, and filled words appear inline.
-- Under each template: the active effect (armed trap or accelerate), the HP bar and the template timeout bar.
+- Under each template: the armed trap on its own row (e.g. `close/still/dash > attack+shield+speed`, the full panel width so even a level-3 trap fits; the spaces around `>` go when space is tight, and anything longer is cut with "..."). With a 2-line template, the trap row sits evenly spaced between the template and the bottom row (6 px gaps); it stays there while a template is being dealt. The bottom row has a heart with the HP pips on the left, the template timeout bar on the right. The HUD is only 44 px tall (the top walls rise into the strip above the arena), so a 3-line template pushes the trap row closer to that bottom row.
 - **Dash cooldown** is a small **grey** bar (about the width of the wizard) above the player's head, shown only while dash is recharging. It's grey so it isn't confused with health.
 - There is no timer for the next wave; the flashing spawn markers are the warning.
 - **Word tiles on the map use short labels**, such as `attack`, `shield`, `speed`, `dash`, `still`, `hit` and `close`, because full phrases like "enemy is close" are too wide at 320×180. The HUD shows the full phrase.

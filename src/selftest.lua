@@ -727,13 +727,17 @@ function SelfTest.showcase(g)
     b1.template = Spellbook.merge(Spellbook.merge(template(g, "when"), template(g, "combo"), t), template(g, "repeat", 3), t)
     b1.template.conditions[1].word = "close"
     b1.template.spells[2].word = "attack"
-    b2.template = Spellbook.merge(template(g, "combo"), template(g, "repeat", 2), t)
-    b2.template.spells[1].word = "shield"
+    -- A long level-3 template above a trap row.
+    b2.template = Spellbook.merge(Spellbook.merge(template(g, "when"), template(g, "when"), t), template(g, "combo"), t)
+    b2.template.conditions[1].word, b2.template.conditions[2].word = "close", "still"
+    b2.template.spells[1].word, b2.template.spells[2].word = "shield", "accelerate"
+    b2.trap = { conditions = { "hit" }, spells = { "shield" }, n = 1, recharge = 0 }
     g.players[2].shield = 9
     g.players[1].accelerate = 2
     g.players[1].dashCooldown = t.dash.cooldown * 0.4
     g.players[1].dashTime, g.players[1].dashX, g.players[1].dashY = 0.1, 1, 0 -- exercises dust puffs
-    b1.trap = { conditions = { "hit" }, spells = { "shield" }, n = 1 }
+    -- Widest possible trap text (level 3), half recharged.
+    b1.trap = { conditions = { "close", "still", "dash" }, spells = { "attack", "shield", "accelerate" }, n = 1, recharge = 1 }
     b1.template.timeLeft = 1.5 -- P1's effects are about to expire: exercises the blink
     local _, y = g.arena:tileCenter(1, 3) -- open row, clear line of sight
     g.players[1].y, g.players[2].y = y, y
