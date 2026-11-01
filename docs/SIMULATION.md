@@ -13,23 +13,45 @@ The simulation plays **bot vs bot** rounds with no window, much faster than real
 ## Running it
 
 ```
-lovec . --sim 400 [--seed 1] [--cap 300] [--p1 PROFILE] [--p2 PROFILE]
+lovec . --sim 1m [--stats] [--workers N] [--cap 300] [--p1 PROFILE] [--p2 PROFILE]
 ```
 
 | Option | Meaning |
 |---|---|
-| `--sim N` | Number of rounds (default 200) |
-| `--seed N` | Random seed. The same seed and code give the same rounds, so before/after comparisons use the same games. |
+| `--sim N` / `--sim Mm` | Play `N` rounds (default 200), or as many as fit in `M` minutes (e.g. `1m`, `10m`). Rounds still being played when time runs out are finished and counted. |
+| `--stats` | Also rewrite [STATS.md](STATS.md) with the report (see "Stats history" below) |
+| `--workers N` | Worker threads (default: one per logical CPU core) |
 | `--cap S` | A round that hasn't ended after `S` seconds of fight time is stopped and counted as "no winner" (default 300). |
 | `--p1`, `--p2` | Bot profile for that side, from `botProfiles` in `data/tuning.json` (default: the plain `bot` settings) |
 
-- **Speed:** about 2.7 s per round (a round averages ~170 s of game time, at a fixed 60 steps per second). 400 rounds take about 18 min. Each run uses one CPU core, so several runs can go in parallel.
-- **Output:** a report in the console, plus a CSV saved to LÖVE's save folder (`%APPDATA%\LOVE\wordcraft\sim_<p1>_vs_<p2>_seed<n>.csv`).
+- **Speed:** rounds are spread over worker threads, one per logical CPU core. On the dev machine (8 cores, 16 threads) that's about **145 rounds per minute**: ~150 rounds in 1 min, ~1,450 in 10 min. 16 threads measured 15% faster than 8. One round alone takes about 2.7 s (a round averages ~160 s of game time, at a fixed 60 steps per second).
+- **Seeds:** every run uses a fresh random seed, so two runs of the same code give slightly different numbers. That difference is what the ± measures.
+- **Output:** a report in the console, plus a CSV saved to LÖVE's save folder (`%APPDATA%\LOVE\wordcraft\sim_<p1>_vs_<p2>.csv`).
 - **Profiles** override any `bot` number for one side, and can list `avoidWords` the bot never picks up, e.g. `"noAccelerate": { "avoidWords": ["accelerate"] }`. They're used for A/B runs.
+
+## Stats history
+
+[STATS.md](STATS.md) holds the report of the latest `--stats` run, headed only by its round count. When a gameplay change (rules, tuning, bot) is committed, the user asks for one of two runs, and the new STATS.md goes into the same commit:
+
+| Run | Command | Rounds | Good for |
+|---|---|---|---|
+| Small | `lovec . --sim 1m --stats` | ~150 | "Did this change do what I expected, and break nothing?" Beam hit rates, shield/speed and wave numbers are precise; ret/word and pickup share of level-1 shapes are good; round length to ±4 s; win rate only to ±4 points. |
+| Big | `lovec . --sim 10m --stats` | ~1,450 | Win rate (±1.3 points): A/B profiles, P1/P2 fairness. Level-2 and level-3 shapes. |
+
+`git log -p docs/STATS.md` then shows how each change moved the numbers, and checking out a commit shows the rules that produced them. Interpretation still goes in the results log below.
+
+### Reading ±
+
+Every average and share comes with **± one standard error**: roughly how far that number would move if the same code were run again. It's computed from how much the number varies **between rounds** (rounds are the independent samples; beams or pickups within one round aren't).
+- A change between two runs is real if it's clearly bigger than both ±s combined. About 2× is a safe bar. Round length going from 168±4 s to 150±4 s is real; 168±15 to 160±15 isn't.
+- More rounds shrink the ±: 4× the rounds halves it.
+- Rare shapes (most level-3 ones) have a wide ±, or none when only one round had them. Don't read much into them from a small run.
+- Quantiles (median, 10%/90%) and counts have no ±.
 
 ## How it works
 
-- **Code:** `src/sim.lua`.
+- **Code:** `src/sim.lua` (rules and report, no `love.*`), `src/simjobs.lua` (hands out rounds to threads) and `src/simworker.lua` (the thread).
+- **Threads:** each worker loads the data itself, plays the rounds it's handed, and sends each round's stats back as one self-contained record. The main thread merges all records and computes every metric once, over all rounds, so the report is the same as if one thread had played them all.
 - **Events:** the rules report what happens through `Game.onEvent`, which is off in normal play. The events are `complete`, `timeout`, `effectEnd`, `trapFired`, `spell`, `laser`, `pickup` and `wave`.
 - **Tagging:** every finished template gets an **effect** record (its stacked kinds, level and word count). Every spell it casts carries that record (and, for traps, the condition that set it off). So a beam is always credited to the template that launched it, even if it lands after the effect window closed.
 - **Pickups** are reported before they're applied, so a pickup that completes a template still counts inside the window it closes.
@@ -50,7 +72,7 @@ lovec . --sim 400 [--seed 1] [--cap 300] [--p1 PROFILE] [--p2 PROFILE]
 | Metric | Notes |
 |---|---|
 | Length: average, median, 10% and 90% marks | Pacing. A long 90% tail means stalemates. |
-| Win rate P1 / P2 / draw / no winner | Mainly for A/B runs between profiles. The same bot on both sides should come out about 50/50; if not, something is unfair. At 400 rounds, one standard error is about ±2.5 points. |
+| Win rate P1 / P2 / draw / no winner | Mainly for A/B runs between profiles. The same bot on both sides should come out about 50/50; if not, something is unfair. |
 
 ### 2. Finished templates
 One table **by shape** and the same numbers **summed by level**, plus an overall row.
@@ -90,13 +112,18 @@ One row per finished or timed-out template: `round, player, shape, level, result
 
 ## Value of a spell or rule: A/B win rate
 
-Some value is indirect. Speed, for example, means more words, which means more casts later. Per-template numbers miss that. **The overall measure is how much the win rate drops when one side stops using something.** Run a profile on one side (e.g. `--p1 noAccelerate`) against the default bot and compare P1's win rate with the same-bot baseline. At 200 rounds, differences under about ±7 points are noise.
+Some value is indirect. Speed, for example, means more words, which means more casts later. Per-template numbers miss that. **The overall measure is how much the win rate drops when one side stops using something.** Run a profile on one side (e.g. `--p1 noAccelerate`) against the default bot and compare P1's win rate with the same-bot baseline. Use a big (10 min) run: a small one only shows differences over about 10 points.
 
 ---
 
 ## Results log
 
-Newest first. Each entry records the bot version, because bot changes shift every number.
+Newest first. Each entry records the bot version, because bot changes shift every number. Raw numbers for every gameplay commit are in the history of [STATS.md](STATS.md).
+
+### 2026-10-31 — 8-direction bot, first STATS.md
+
+- **Setup:** small run (1 min, 159 rounds), default vs default, same rules as the first baseline. The bot now moves and dashes in 8 directions only.
+- **Reading:** as expected, nothing moved much. `when` is still the weakest (ret/word 0.08±0.00, picks 45.6±0.4%), `repeat` the strongest (0.53±0.01). Trap beams still hit no more often than plain casts (24.9±0.5%). Round length 159±4 s (was 168). P1/P2 came out 49.1/50.9 ±4.0, so the earlier 45.8/54.0 split may have been noise. A big run would settle it.
 
 ### 2026-10-31 — first baseline
 

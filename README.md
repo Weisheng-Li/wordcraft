@@ -25,7 +25,7 @@ Built with [LÖVE](https://love2d.org) 11.5. Game rules live in [docs/DESIGN.md]
 - `lovec . --selftest` runs a headless check of the spell rules.
 - `lovec . --shot` saves a screenshot after a few seconds to LÖVE's save folder, then quits.
 - `lovec . --shot-training` does the same for the training room.
-- `lovec . --sim 400` runs 400 bot-vs-bot rounds with no window and prints balance metrics, plus a CSV per template in LÖVE's save folder. Add `--seed N`, `--cap SECONDS`, `--p1 PROFILE`, `--p2 PROFILE` (profiles: `botProfiles` in `data/tuning.json`). See DESIGN §15.
+- `lovec . --sim 400` runs 400 bot-vs-bot rounds (or `--sim 1m` for as many as fit in a minute) on every CPU core with no window, and prints balance metrics, plus a CSV per template in LÖVE's save folder. `--stats` also rewrites `docs/STATS.md`. Add `--workers N`, `--cap SECONDS`, `--p1 PROFILE`, `--p2 PROFILE` (profiles: `botProfiles` in `data/tuning.json`). See [docs/SIMULATION.md](docs/SIMULATION.md).
 
 ## Sprites
 
@@ -50,6 +50,6 @@ powershell -ExecutionPolicy Bypass -File tools\make_sprites.ps1
 ## Migration-friendly rules
 
 - Game data goes in `data/*.json`, never hardcoded in Lua.
-- Rule modules (`arena`, `player`, `spellbook`, `wordfield`, `game`, `bot`, `sim`) don't call `love.*`; only `render.lua` and `main.lua` do.
+- Rule modules (`arena`, `player`, `spellbook`, `wordfield`, `game`, `bot`, `sim`, `data`) don't call `love.*`; only `render.lua`, `main.lua` and the simulation's thread code (`simjobs.lua`, `simworker.lua`) do.
 - Tuning is read every frame from one shared table, never cached at load time, so it can be live-reloaded later.
 - Assets use standard formats (PNG, OGG/WAV, TTF/bitmap fonts).

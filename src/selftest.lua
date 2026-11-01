@@ -709,6 +709,17 @@ tests["sim: a short bot vs bot batch runs and reports"] = function(g)
     assert(#lines > 10, "report printed")
 end
 
+tests["sim: a round record survives encoding (worker threads send them as text)"] = function(g)
+    local Sim = require("src.sim")
+    local R = Sim.playRound(g.data, 3, { seed = 7, cap = 60 })
+    local back = Sim.decode(Sim.encode(R))
+    assert(back.round == 3 and back.length == R.length and back.winner == R.winner)
+    assert(#back.templates == #R.templates and #back.waves.gaps == #R.waves.gaps)
+    for k, tr in pairs(R.traps) do assert(back.traps[k].beams == tr.beams) end
+    local S = Sim.finish({ back, R }, { cap = 60, out = function() end })
+    assert(#S.rounds == 2 and #S.templates == 2 * #R.templates, "records merge")
+end
+
 -- Sample scene for `--shot` screenshots: stacked templates, shields, a trap.
 function SelfTest.showcase(g)
     local t = g.data.tuning

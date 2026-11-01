@@ -1,8 +1,12 @@
 -- Simulation: bot vs bot rounds with no window, much faster than real
--- time, then balance metrics (DESIGN §15). Pure logic: the caller passes
--- `print` and a `write(path, text)` for the CSV.
+-- time, then balance metrics (DESIGN §15, docs/SIMULATION.md). Pure logic:
+-- each round's stats are a self-contained record (`Sim.playRound`), so
+-- worker threads (src/simjobs.lua) can play rounds and send the records
+-- back as text (`Sim.encode` / `Sim.decode`). `Sim.finish` merges them
+-- and reports. Every average and share comes with ± one standard error,
+-- from how much it varies between rounds.
 --
---   lovec . --sim 500 [--seed 1] [--p1 profile] [--p2 profile]
+--   lovec . --sim 400 | --sim 1m [--stats] [--p1 profile] [--p2 profile]
 --
 -- Metrics:
 --   1. Rounds: length, win rate.
@@ -44,8 +48,11 @@ local function newStats()
     }
 end
 
--- Play one round; add what happened to `S`.
-local function playRound(data, S, roundNo, opts)
+-- Play round `roundNo` and return its stats record. The round's random
+-- numbers come from `opts.seed` and the round number.
+function Sim.playRound(data, roundNo, opts)
+    math.randomseed(opts.seed * 100003 + roundNo)
+    local S = newStats()
     local profiles = data.tuning.botProfiles or {}
     local g = Game.new(data, { width = W, height = H, rand = math.random })
     local bots = {
@@ -186,15 +193,81 @@ local function playRound(data, S, roundNo, opts)
     if stretch then endStretch("round end") end
     for effect in pairs(open) do closeWindow(effect, g.clock) end
 
-    S.rounds[#S.rounds + 1] = {
-        length = g.clock,
-        winner = g.state == "over" and tostring(g.winner) or "cap",
-    }
+    S.round = roundNo
+    S.length = g.clock
+    S.winner = g.state == "over" and tostring(g.winner) or "cap"
+    return S
+end
+
+-- A round record as text (for sending between threads), and back.
+local function encodeInto(v, out)
+    local t = type(v)
+    if t == "number" then
+        out[#out + 1] = string.format("%.17g", v)
+    elseif t == "string" then
+        out[#out + 1] = string.format("%q", v)
+    elseif t == "boolean" then
+        out[#out + 1] = tostring(v)
+    elseif t == "table" then
+        out[#out + 1] = "{"
+        for k, x in pairs(v) do
+            out[#out + 1] = "["
+            encodeInto(k, out)
+            out[#out + 1] = "]="
+            encodeInto(x, out)
+            out[#out + 1] = ","
+        end
+        out[#out + 1] = "}"
+    end
+end
+
+function Sim.encode(record)
+    local out = {}
+    encodeInto(record, out)
+    return table.concat(out)
+end
+
+function Sim.decode(text)
+    local chunk = assert(loadstring("return " .. text))
+    setfenv(chunk, {})
+    return chunk()
+end
+
+-- Add every number field of `src` into `dst`.
+local function addInto(dst, src)
+    for k, v in pairs(src) do
+        if type(v) == "number" then dst[k] = (dst[k] or 0) + v end
+    end
+end
+
+local function append(dst, src)
+    for _, v in ipairs(src) do dst[#dst + 1] = v end
+end
+
+-- All rounds' records summed into one stats table.
+function Sim.merge(records)
+    local S = newStats()
+    for _, R in ipairs(records) do
+        S.rounds[#S.rounds + 1] = { length = R.length, winner = R.winner }
+        append(S.templates, R.templates)
+        for k, tr in pairs(R.traps) do
+            S.traps[k] = S.traps[k] or {}
+            addInto(S.traps[k], tr)
+        end
+        addInto(S.lasers, R.lasers)
+        addInto(S.shield, R.shield)
+        addInto(S.accel, R.accel)
+        addInto(S.waves, R.waves)
+        append(S.waves.gaps, R.waves.gaps)
+        addInto(S.oneSided, R.oneSided)
+        append(S.oneSided.stretches, R.oneSided.stretches)
+    end
+    return S
 end
 
 -- Formatting helpers.
-local function pct(a, b) return b > 0 and string.format("%5.1f%%", 100 * a / b) or "    -" end
 local function avg(a, b) return b > 0 and a / b or 0 end
+local function pct(a, b) return b > 0 and string.format("%5.1f%%", 100 * a / b) or "    -" end
 
 local function quantile(list, q)
     if #list == 0 then return 0 end
@@ -204,9 +277,36 @@ local function quantile(list, q)
     return s[math.max(1, math.ceil(q * #s))]
 end
 
--- Sum template rows into groups by `keyOf(row)`.
-local function groupTemplates(rows, keyOf)
-    local groups, order = {}, {}
+-- sum(a) / sum(b) over rounds, and its standard error. Rounds are the
+-- independent samples, so this holds for shares of beams or pickups too,
+-- which bunch up within a round. `f(item)` returns a, b for one round.
+local function ratio(items, f)
+    local as, bs, A, B = {}, {}, 0, 0
+    for i, item in ipairs(items) do
+        local a, b = f(item)
+        as[i], bs[i] = a, b
+        A, B = A + a, B + b
+    end
+    if B == 0 then return nil end
+    local r, s, n = A / B, 0, #items
+    for i = 1, n do
+        local d = as[i] - r * bs[i]
+        s = s + d * d
+    end
+    return r, n > 1 and math.sqrt(s * n / (n - 1)) / B or 0
+end
+
+-- "45.8±2.5%", "0.52±0.03"; "-" when there's no data.
+local function pctSE(r, se) return r and string.format("%.1f±%.1f%%", 100 * r, 100 * se) or "-" end
+local function numSE(fmt, r, se) return r and string.format(fmt .. "±" .. fmt, r, se) or "-" end
+
+-- Pad to a display width ("±" is two bytes but one column).
+local function width(s) return #s - select(2, s:gsub("±", "")) end
+local function lpad(s, w) return string.rep(" ", w - width(s)) .. s end
+
+-- Sum template rows into groups by `keyOf(row)`: key -> totals.
+local function groupBy(rows, keyOf)
+    local groups = {}
     for _, r in ipairs(rows) do
         local key = keyOf(r)
         local gr = groups[key]
@@ -214,7 +314,6 @@ local function groupTemplates(rows, keyOf)
             gr = { key = key, level = r.level, done = 0, timeout = 0, words = 0, window = 0,
                    damage = 0, blocked = 0, mine = 0, theirs = 0 }
             groups[key] = gr
-            order[#order + 1] = gr
         end
         if r.result == "timeout" then
             gr.timeout = gr.timeout + 1
@@ -228,78 +327,96 @@ local function groupTemplates(rows, keyOf)
             gr.theirs = gr.theirs + r.theirs
         end
     end
+    return groups
+end
+
+local function templateTable(out, title, records, S, keyOf)
+    local perRound = {}
+    for i, R in ipairs(records) do perRound[i] = groupBy(R.templates, keyOf) end
+    local order = {}
+    for _, gr in pairs(groupBy(S.templates, keyOf)) do order[#order + 1] = gr end
     table.sort(order, function(a, b)
         if a.level ~= b.level then return a.level < b.level end
-        return a.done + a.timeout > b.done + b.timeout
+        if a.done + a.timeout ~= b.done + b.timeout then return a.done + a.timeout > b.done + b.timeout end
+        return a.key < b.key
     end)
-    return order
-end
 
-local function templateTable(out, title, order)
     out(title)
-    out(string.format("  %-22s %6s %7s %6s %7s %7s %7s %8s %7s",
+    out(string.format("  %-22s %6s %7s %6s %7s %7s %7s %11s %11s",
         "", "done", "t/out", "words", "window", "dmg", "blocked", "ret/word", "picks"))
     for _, gr in ipairs(order) do
-        local n = gr.done
-        out(string.format("  %-22s %6d %7s %6.1f %6.1fs %7.2f %7.2f %8.2f %7s",
+        local key, n = gr.key, gr.done
+        local ret, retSE = ratio(perRound, function(m)
+            local x = m[key]
+            if not x then return 0, 0 end
+            return x.damage + x.blocked, x.words
+        end)
+        local picks, picksSE = ratio(perRound, function(m)
+            local x = m[key]
+            if not x then return 0, 0 end
+            return x.mine, x.mine + x.theirs
+        end)
+        out(string.format("  %-22s %6d %7s %6.1f %6.1fs %7.2f %7.2f %s %s",
             gr.key, n, pct(gr.timeout, n + gr.timeout), avg(gr.words, n), avg(gr.window, n),
-            avg(gr.damage, n), avg(gr.blocked, n), avg(gr.damage + gr.blocked, gr.words),
-            pct(gr.mine, gr.mine + gr.theirs)))
+            avg(gr.damage, n), avg(gr.blocked, n),
+            lpad(numSE("%.2f", ret, retSE), 11), lpad(pctSE(picks, picksSE), 11)))
     end
 end
 
-local function report(S, opts, out)
-    local n = #S.rounds
-    out("")
-    out(string.format("=== Simulation: %d rounds, seed %d, P1 %s vs P2 %s, cap %ds ===",
-        n, opts.seed, opts.p1 or "default", opts.p2 or "default", opts.cap))
+local function report(records, S, out)
+    local n = #records
 
     -- 1. Rounds
-    local lengths, wins = {}, {}
-    for i, r in ipairs(S.rounds) do
-        lengths[i] = r.length
-        wins[r.winner] = (wins[r.winner] or 0) + 1
+    local lengths = {}
+    for i, R in ipairs(records) do lengths[i] = R.length end
+    local function winShare(w)
+        return pctSE(ratio(records, function(R) return R.winner == w and 1 or 0, 1 end))
     end
-    local total = 0
-    for _, l in ipairs(lengths) do total = total + l end
-    out("")
     out("1. Rounds")
-    out(string.format("  length: avg %.0fs, median %.0fs, 10%% %.0fs, 90%% %.0fs",
-        avg(total, n), quantile(lengths, 0.5), quantile(lengths, 0.1), quantile(lengths, 0.9)))
+    out(string.format("  length: avg %ss, median %.0fs, 10%% %.0fs, 90%% %.0fs",
+        numSE("%.0f", ratio(records, function(R) return R.length, 1 end)),
+        quantile(lengths, 0.5), quantile(lengths, 0.1), quantile(lengths, 0.9)))
     out(string.format("  winner: P1 %s  P2 %s  draw %s  no winner by cap %s",
-        pct(wins["1"] or 0, n), pct(wins["2"] or 0, n), pct(wins.draw or 0, n), pct(wins.cap or 0, n)))
+        winShare("1"), winShare("2"), winShare("draw"), winShare("cap")))
 
     -- 2. Templates
     out("")
     out("2. Finished templates  (dmg/blocked per cast; ret/word = (dmg+blocked)/word;")
     out("   picks = my share of all pickups while the effect window is open)")
-    templateTable(out, "  by shape:", groupTemplates(S.templates, function(r) return r.shape end))
-    templateTable(out, "  by level:", groupTemplates(S.templates, function(r) return "level " .. r.level end))
-    local all = groupTemplates(S.templates, function() return "all" end)
-    templateTable(out, "  overall:", all)
+    templateTable(out, "  by shape:", records, S, function(r) return r.shape end)
+    templateTable(out, "  by level:", records, S, function(r) return "level " .. r.level end)
+    templateTable(out, "  overall:", records, S, function() return "all" end)
 
     -- 3. Traps
     out("")
     out("3. Beam hit rate by what fired it")
-    out(string.format("  %-14s %6s %7s %8s %7s %7s", "", "beams", "hit", "blocked", "dodged", "wall"))
+    out(string.format("  %-14s %6s %11s %8s %7s %7s", "", "beams", "hit", "blocked", "dodged", "wall"))
     local keys = {}
     for k in pairs(S.traps) do keys[#keys + 1] = k end
     table.sort(keys, function(a, b) return S.traps[a].beams > S.traps[b].beams end)
     for _, k in ipairs(keys) do
         local tr = S.traps[k]
-        out(string.format("  %-14s %6d %7s %8s %7s %7s", k, tr.beams, pct(tr.hit, tr.beams),
+        local hit = pctSE(ratio(records, function(R)
+            local x = R.traps[k]
+            if not x then return 0, 0 end
+            return x.hit, x.beams
+        end))
+        out(string.format("  %-14s %6d %s %8s %7s %7s", k, tr.beams, lpad(hit, 11),
             pct(tr.blocked, tr.beams), pct(tr.dodged, tr.beams), pct(tr.wall, tr.beams)))
     end
 
     -- 4. Words
     local w = S.waves
-    local gapSum = 0
-    for _, v in ipairs(w.gaps) do gapSum = gapSum + v end
     out("")
     out("4. Word spawning")
-    out(string.format("  waves: %d, gap avg %.1fs (10%% %.1fs, 90%% %.1fs), pulled early (dead board) %s, leftovers/wave %.1f",
-        w.count, avg(gapSum, #w.gaps), quantile(w.gaps, 0.1), quantile(w.gaps, 0.9),
-        pct(w.early, w.count), avg(w.leftovers, w.count)))
+    local gap = numSE("%.1f", ratio(records, function(R)
+        local sum = 0
+        for _, v in ipairs(R.waves.gaps) do sum = sum + v end
+        return sum, #R.waves.gaps
+    end))
+    local early = pctSE(ratio(records, function(R) return R.waves.early, R.waves.count end))
+    out(string.format("  waves: %d, gap avg %ss (10%% %.1fs, 90%% %.1fs), pulled early (dead board) %s, leftovers/wave %.1f",
+        w.count, gap, quantile(w.gaps, 0.1), quantile(w.gaps, 0.9), early, avg(w.leftovers, w.count)))
     local o = S.oneSided
     local lens, ends, mixes = {}, {}, {}
     for i, s in ipairs(o.stretches) do
@@ -308,8 +425,9 @@ local function report(S, opts, out)
         mixes[s.mix] = (mixes[s.mix] or 0) + 1
     end
     local ns = #o.stretches
+    local share = pctSE(ratio(records, function(R) return R.oneSided.time, R.oneSided.fightTime end))
     out(string.format("  one-sided board: %s of fight time, %d stretches, length avg %.1fs (90%% %.1fs)",
-        pct(o.time, o.fightTime), ns, avg(o.time, ns), quantile(lens, 0.9)))
+        share, ns, avg(o.time, ns), quantile(lens, 0.9)))
     out(string.format("    ended by: pickup %s, next wave %s, other %s, round end %s",
         pct(ends.pickup or 0, ns), pct(ends.wave or 0, ns), pct(ends.other or 0, ns), pct(ends["round end"] or 0, ns)))
     out(string.format("    floor had: condition only %s, spell only %s, mixed %s",
@@ -318,18 +436,27 @@ local function report(S, opts, out)
     -- 5. Combat
     local L = S.lasers
     local beams = L.hit + L.blocked + L.dodged + L.wall
+    local function beamShare(result)
+        return pctSE(ratio(records, function(R)
+            local x = R.lasers
+            return x[result], x.hit + x.blocked + x.dodged + x.wall
+        end))
+    end
     out("")
     out("5. Combat")
     out(string.format("  beams: %d per round; hit %s, blocked %s, dodged %s, wall %s",
-        math.floor(avg(beams, n) + 0.5), pct(L.hit, beams), pct(L.blocked, beams), pct(L.dodged, beams), pct(L.wall, beams)))
+        math.floor(avg(beams, n) + 0.5), beamShare("hit"), beamShare("blocked"), beamShare("dodged"), beamShare("wall")))
     local sh = S.shield
     out(string.format("  shield charges: %.1f gained per round; used %s, expired unused %s",
-        avg(sh.gained, n), pct(sh.used, sh.gained), pct(sh.expired, sh.gained)))
+        avg(sh.gained, n),
+        pctSE(ratio(records, function(R) return R.shield.used, R.shield.gained end)),
+        pctSE(ratio(records, function(R) return R.shield.expired, R.shield.gained end))))
     local a = S.accel
     local fastRate = avg(a.picksFast, a.time)
     local normalRate = avg(a.picksNormal, a.playerTime - a.time)
     out(string.format("  accelerate: %.1f stacks gained per round; active %s of the time, avg %.1f stacks when active",
-        avg(a.gained, n), pct(a.time, a.playerTime), avg(a.stackTime, a.time)))
+        avg(a.gained, n), pctSE(ratio(records, function(R) return R.accel.time, R.accel.playerTime end)),
+        avg(a.stackTime, a.time)))
     out(string.format("    pickups per minute: %.1f while accelerated vs %.1f normal (x%.2f)",
         fastRate * 60, normalRate * 60, avg(fastRate, normalRate)))
 end
@@ -350,25 +477,69 @@ local function csv(rows)
     return table.concat(lines, "\n") .. "\n"
 end
 
--- opts: { rounds, seed, cap, p1, p2, out = print, write = fn(path, text), progress = fn(i, n) }
-function Sim.run(data, opts)
-    opts.seed = opts.seed or 1
+-- docs/STATS.md: the report, replaced by every `--stats` run, so the
+-- file's git history shows how each gameplay change moved the numbers.
+local function statsFile(rounds, lines)
+    return table.concat({
+        "# Wordcraft — Simulation stats",
+        "",
+        "Generated by `lovec . --sim ... --stats`; don't edit by hand. Each run replaces this file,",
+        "so its git history shows how each gameplay change moved the numbers.",
+        "What the numbers mean: [SIMULATION.md](SIMULATION.md). ± is one standard error.",
+        "",
+        "**Rounds:** " .. rounds,
+        "",
+        "```text",
+        table.concat(lines, "\n"),
+        "```",
+        "",
+    }, "\n")
+end
+
+-- Fill in defaults: a fresh seed each run, rounds stop at 300 s.
+function Sim.defaults(opts)
+    opts.seed = opts.seed or os.time()
     opts.cap = opts.cap or 300
+    return opts
+end
+
+-- Merge round records, print the report, save the CSV and (with
+-- `writeStats`) the stats file.
+-- opts: { p1, p2, cap, out = print, write = fn(path, text), writeStats = fn(text) }
+function Sim.finish(records, opts)
+    table.sort(records, function(a, b) return a.round < b.round end)
+    local S = Sim.merge(records)
     local out = opts.out or print
-    local S = newStats()
-    for i = 1, opts.rounds do
-        math.randomseed(opts.seed * 100003 + i)
-        playRound(data, S, i, opts)
-        if opts.progress then opts.progress(i, opts.rounds) end
-    end
-    report(S, opts, out)
+    out("")
+    out(string.format("=== Simulation: %d rounds, P1 %s vs P2 %s, cap %ds ===",
+        #records, opts.p1 or "default", opts.p2 or "default", opts.cap))
+    out("")
+    local lines = {}
+    report(records, S, function(s)
+        lines[#lines + 1] = s
+        out(s)
+    end)
     if opts.write then
-        local path = string.format("sim_%s_vs_%s_seed%d.csv", opts.p1 or "default", opts.p2 or "default", opts.seed)
+        local path = string.format("sim_%s_vs_%s.csv", opts.p1 or "default", opts.p2 or "default")
         opts.write(path, csv(S.templates))
         out("")
         out("CSV (one row per finished or timed-out template): " .. path)
     end
+    if opts.writeStats then opts.writeStats(statsFile(#records, lines)) end
     return S
+end
+
+-- All rounds in this thread, one after another (selftest; the game's
+-- --sim spreads rounds over worker threads instead).
+-- opts: Sim.finish's, plus { rounds, seed, progress = fn(i, n) }
+function Sim.run(data, opts)
+    Sim.defaults(opts)
+    local records = {}
+    for i = 1, opts.rounds do
+        records[i] = Sim.playRound(data, i, opts)
+        if opts.progress then opts.progress(i, opts.rounds) end
+    end
+    return Sim.finish(records, opts)
 end
 
 return Sim

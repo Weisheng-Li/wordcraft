@@ -4,12 +4,13 @@
 --
 -- Debug flags (after the game folder):
 --   love . --selftest   love . --shot   love . --shot-training   love . --bot
---   lovec . --sim 500 [--seed 1] [--cap 300] [--p1 profile] [--p2 profile]
---     (bot vs bot balance run, see src/sim.lua)
+--   lovec . --sim 400 | --sim 1m [--stats] [--workers 8] [--cap 300] [--p1 profile] [--p2 profile]
+--     (bot vs bot balance run: a number of rounds, or minutes; --stats
+--     rewrites docs/STATS.md. See docs/SIMULATION.md.)
 -- Keys: F2 toggles the training room (Space switches its tiles), F3 hands P2
 -- to the bot (or back), F5 reloads code and data.
 
-local json = require("src.json")
+local loadData = require("src.data")
 local Bot = require("src.bot")
 local Game = require("src.game")
 local Render = require("src.render")
@@ -39,54 +40,53 @@ local function toggleBot()
     print("P2: " .. (bot and "bot" or "human"))
 end
 
-local function loadJson(path)
-    return json.decode(love.filesystem.read(path))
-end
-
--- All game data in one table. Tuning lives here and is read every frame,
--- so a future playtest mode can reload it in place.
-local function loadData()
-    local words = loadJson("data/words.json").words
-    local byId, byType = {}, {}
-    for _, w in ipairs(words) do
-        byId[w.id] = w
-        byType[w.type] = byType[w.type] or {}
-        table.insert(byType[w.type], w)
-    end
-    return {
-        tuning = loadJson("data/tuning.json"),
-        arena = loadJson("data/arena.json"),
-        templates = loadJson("data/templates.json").templates,
-        training = loadJson("data/training.json"),
-        words = { list = words, byId = byId, byType = byType },
-    }
-end
-
 local function newGame()
     game = Game.new(data, { width = GAME_W, height = GAME_H, rand = math.random, mode = mode })
 end
 
 function love.load(args)
     math.randomseed(os.time())
-    data = loadData()
+    data = loadData(love.filesystem.read)
 
     args = args or {}
     for i, a in ipairs(args) do
         if a == "--sim" then
-            local opts = { rounds = tonumber(args[i + 1]) or 200 }
-            for j = i + 2, #args - 1 do
+            local amount = args[i + 1] or ""
+            local minutes = tonumber(amount:match("^([%d.]+)m$"))
+            local opts = { minutes = minutes, rounds = not minutes and (tonumber(amount) or 200) or nil }
+            for j = i + 1, #args do
                 local key, value = args[j]:match("^%-%-(%w+)$"), args[j + 1]
-                if key == "seed" or key == "cap" then opts[key] = tonumber(value) end
+                if key == "seed" or key == "cap" or key == "workers" then opts[key] = tonumber(value) end
                 if key == "p1" or key == "p2" then opts[key] = value end
+                if key == "stats" then
+                    opts.writeStats = function(text)
+                        local path = love.filesystem.getSource() .. "/docs/STATS.md"
+                        local f = assert(io.open(path, "wb"))
+                        f:write(text)
+                        f:close()
+                        print("stats: " .. path)
+                    end
+                end
             end
             opts.write = function(path, text)
                 love.filesystem.write(path, text)
                 print("  saved to " .. love.filesystem.getSaveDirectory() .. "/" .. path)
             end
-            opts.progress = function(k, n)
-                if k % 50 == 0 or k == n then io.write(string.format("\r  %d / %d rounds", k, n)); io.flush() end
+            local lastShown = -1
+            opts.progress = function(k, n, secondsLeft)
+                local now = math.floor(love.timer.getTime())
+                if now == lastShown and k ~= n then return end
+                lastShown = now
+                io.write(secondsLeft and string.format("\r  %d rounds, %ds left   ", k, secondsLeft)
+                    or string.format("\r  %d / %d rounds   ", k, n))
+                io.flush()
             end
-            require("src.sim").run(data, opts)
+            local Sim = require("src.sim")
+            Sim.defaults(opts)
+            local records, workers, seconds = require("src.simjobs").run(opts)
+            print(string.format("\n  %d rounds on %d threads in %.0fs (%.1f rounds per minute)",
+                #records, workers, seconds, #records / seconds * 60))
+            Sim.finish(records, opts)
             love.event.quit(0)
             return
         end
