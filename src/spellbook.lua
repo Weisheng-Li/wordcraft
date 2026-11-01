@@ -23,6 +23,8 @@ function Spellbook.new(player, opponent, data, castSpell)
     self.trap = nil      -- { conditions = {ids}, spells = {ids}, n }
     self.casting = nil   -- { spells, left, raiseLeft, gapLeft } while raising the staff
     self.sandbox = false -- training room: no dealing, no timeouts; templates come from tiles
+    self.effect = nil    -- the finished template whose effect window is open (for stats)
+    self.emit = function() end -- stats hook: Game points it at its event log
     return self
 end
 
@@ -51,6 +53,7 @@ function Spellbook.makeTemplate(def, n, tuning)
         n = def.kind == "repeat" and n or nil,
         timeLeft = time,
         timeTotal = time, -- full time at this level, for the countdown bar
+        kinds = { def.id }, -- template ids stacked into this one (for stats)
     }
 end
 
@@ -70,7 +73,9 @@ function Spellbook.merge(old, new, tuning)
         level = level,
         conditions = {}, spells = {},
         timeLeft = time, timeTotal = time,
+        kinds = {},
     }
+    append(merged.kinds, old.kinds); append(merged.kinds, new.kinds)
     append(merged.conditions, old.conditions); append(merged.conditions, new.conditions)
     append(merged.spells, old.spells)
     if old.n and new.n then
@@ -161,6 +166,10 @@ end
 
 -- Remove whatever the previous template produced (the effect window ends).
 function Spellbook:clearEffect()
+    if self.effect then
+        self.emit({ type = "effectEnd", player = self.player, effect = self.effect, shieldLeft = self.player.shield })
+        self.effect = nil
+    end
     self.player.shield = 0
     self.player.accelerate = 0
     self.trap = nil
@@ -187,14 +196,16 @@ end
 -- lowered for repeatGap in between; a plain cast raises once (DESIGN §6).
 function Spellbook:raise(tuning)
     local c = self.casting
-    for _, id in ipairs(c.spells) do self.castSpell(self.player, id) end
+    for _, id in ipairs(c.spells) do self.castSpell(self.player, id, c.source) end
     c.left = c.left - 1
     c.raiseLeft = Spellbook.raiseTime(c.spells, tuning)
     c.gapLeft = tuning.spells.repeatGap
 end
 
-function Spellbook:castSequence(spells, n, tuning)
-    self.casting = { spells = spells, left = n }
+-- source = { effect, trigger } says which template (and trap condition)
+-- the spells came from, for stats.
+function Spellbook:castSequence(spells, n, tuning, source)
+    self.casting = { spells = spells, left = n, source = source }
     self:raise(tuning)
 end
 
@@ -210,11 +221,14 @@ function Spellbook:complete(tuning)
     self.dealTimer = tuning.templates.dealDelay
 
     local spells, n = words(tpl.spells), tpl.n or 1
+    self.effect = { kinds = tpl.kinds, level = tpl.level, words = #tpl.conditions + #tpl.spells,
+                    trap = #tpl.conditions > 0 }
+    self.emit({ type = "complete", player = self.player, effect = self.effect })
     if #tpl.conditions > 0 then
         self.trap = { conditions = words(tpl.conditions), spells = spells, n = n }
         self:checkTrap(tuning) -- may fire right away (DESIGN §7)
     else
-        self:castSequence(spells, n, tuning)
+        self:castSequence(spells, n, tuning, { effect = self.effect })
     end
 end
 
@@ -222,6 +236,7 @@ end
 -- once the cap is reached. Either way the previous effect ends.
 function Spellbook:timeout(tuning, rand)
     local old = self.template
+    self.emit({ type = "timeout", player = self.player, kinds = old.kinds, level = old.level })
     self:clearEffect()
     local new = randomTemplate(self, tuning, rand)
     if old.level < tuning.stacking.maxLevel then
@@ -250,7 +265,8 @@ function Spellbook:checkTrap(tuning)
     for _, id in ipairs(trap.conditions) do
         if self:conditionTrue(id, tuning) then
             self.trap = nil
-            self:castSequence(trap.spells, trap.n, tuning)
+            self.emit({ type = "trapFired", player = self.player, effect = self.effect, trigger = id })
+            self:castSequence(trap.spells, trap.n, tuning, { effect = self.effect, trigger = id })
             return
         end
     end

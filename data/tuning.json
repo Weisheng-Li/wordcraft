@@ -63,5 +63,9 @@
     "denyBonus": 0.5,
     "contestRatio": 0.6,
     "lostCause": 0.3
+  },
+  "botProfiles": {
+    "noAccelerate": { "avoidWords": ["accelerate"] },
+    "noShield": { "avoidWords": ["shield"] }
   }
 }

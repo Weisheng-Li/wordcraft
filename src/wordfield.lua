@@ -15,6 +15,8 @@ function WordField.new(data, arena)
     self.enabled = true -- the self-test turns waves off to control the board
     self.static = false -- training room: fixed tiles that never run out
     self.events = {}    -- pickups this frame, for render feedback
+    self.early = false  -- the incoming wave was pulled forward by a dead board
+    self.emit = function() end -- stats hook: Game points it at its event log
     return self
 end
 
@@ -130,6 +132,7 @@ function WordField:update(dt, tuning, players, spellbooks, rand)
     -- in now, after its usual flash warning, instead of leaving players
     -- with nothing to do.
     if not self.markers and self:isDead(spellbooks) then
+        if self.waveTimer > tuning.words.warning then self.early = true end
         self.waveTimer = math.min(self.waveTimer, tuning.words.warning)
     end
     if not self.markers and self.waveTimer <= tuning.words.warning then
@@ -138,6 +141,8 @@ function WordField:update(dt, tuning, players, spellbooks, rand)
         for i, m in ipairs(self.markers) do m.def = defs[i] end
     end
     if self.waveTimer <= 0 then
+        self.emit({ type = "wave", early = self.early, count = #self.markers, leftovers = #self.words })
+        self.early = false
         self.words = {}
         for i, m in ipairs(self.markers) do
             self.words[i] = { def = m.def, x = m.x, y = m.y }
@@ -173,6 +178,9 @@ function WordField:resolvePickups(tuning, players, spellbooks, rand)
             if not self.static then table.remove(self.words, i) end
             -- For render: who took what, from where (cleared each update).
             self.events[#self.events + 1] = { def = word.def, x = word.x, y = word.y, player = players[best] }
+            -- Before take(): a pickup that completes a template still counts
+            -- inside the effect window it closes.
+            self.emit({ type = "pickup", player = players[best], def = word.def })
             spellbooks[best]:take(word.def, tuning, rand)
         end
     end

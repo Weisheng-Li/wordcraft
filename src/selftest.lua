@@ -630,6 +630,58 @@ tests["bot vs bot plays a full round"] = function(g)
     assert(p1.hp + p2.hp < 20, "someone should have been hit")
 end
 
+-- Stats hooks (used by the simulation).
+tests["events: a finished template's beams and blocks are tagged with it"] = function(g)
+    local log = {}
+    g.onEvent = function(e) log[#log + 1] = e end
+    g.players[2].shield = 0
+    give(g, 2, "repeat", 2); fill(g, 2, "shield") -- P2's shields come from this effect
+    local shieldEffect = g.spellbooks[2].effect
+    give(g, 1, "combo"); fill(g, 1, "attack", "attack")
+    local attackEffect = g.spellbooks[1].effect
+    assert(attackEffect and attackEffect.kinds[1] == "combo" and attackEffect.words == 2)
+    fire(g)
+    local blocked = 0
+    for _, e in ipairs(log) do
+        if e.type == "laser" then
+            assert(e.source.effect == attackEffect, "beam tagged with its template")
+            if e.result == "blocked" then
+                blocked = blocked + 1
+                assert(e.blocker == shieldEffect, "block credited to the shield's template")
+            end
+        end
+    end
+    assert(blocked == 2, "both beams blocked, got " .. blocked)
+end
+
+tests["events: stacked templates remember their kinds; traps report their trigger"] = function(g)
+    local t = g.data.tuning
+    local log = {}
+    g.onEvent = function(e) log[#log + 1] = e end
+    g.spellbooks[1].template = Spellbook.merge(template(g, "when"), template(g, "repeat", 2), t)
+    assert(table.concat(g.spellbooks[1].template.kinds, "+") == "when+repeat")
+    fill(g, 1, "dash", "attack", "attack")
+    step(g, DT, { { x = 1, y = 0, dash = true }, IDLE })
+    local fired
+    for _, e in ipairs(log) do if e.type == "trapFired" then fired = e end end
+    assert(fired and fired.trigger == "dash", "trap fired by dash")
+    step(g, t.spells.telegraph + 0.1)
+    for _, l in ipairs(g.lasers) do assert(l.source.trigger == "dash") end
+end
+
+tests["sim: a short bot vs bot batch runs and reports"] = function(g)
+    local Sim = require("src.sim")
+    local lines = {}
+    local S = Sim.run(g.data, { rounds = 2, cap = 90, seed = 7, out = function(s) lines[#lines + 1] = s end })
+    assert(#S.rounds == 2, "two rounds")
+    assert(#S.templates > 0, "templates recorded")
+    local L = S.lasers
+    local tagged = 0
+    for _, tr in pairs(S.traps) do tagged = tagged + tr.beams end
+    assert(tagged == L.hit + L.blocked + L.dodged + L.wall, "every beam is credited to a template")
+    assert(#lines > 10, "report printed")
+end
+
 -- Sample scene for `--shot` screenshots: stacked templates, shields, a trap.
 function SelfTest.showcase(g)
     local t = g.data.tuning

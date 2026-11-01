@@ -78,12 +78,16 @@ function Game:reset()
     }
     self.players[2].facing = -1
 
-    local cast = function(caster, spell) self:castSpell(caster, spell) end
+    local cast = function(caster, spell, source) self:castSpell(caster, spell, source) end
     self.spellbooks = {
         Spellbook.new(self.players[1], self.players[2], self.data, cast),
         Spellbook.new(self.players[2], self.players[1], self.data, cast),
     }
     self.wordfield = WordField.new(self.data.words, self.arena)
+    self.clock = 0 -- seconds of fight so far (event timestamps)
+    local emit = function(e) self:emit(e) end
+    for _, book in ipairs(self.spellbooks) do book.emit = emit end
+    self.wordfield.emit = emit
     self.lasers = {}   -- charging: { caster, target, timer, slot }
     self.beams = {}    -- fired, for drawing: { caster, slot, x2, y2, result, timer }
     self.winner = nil  -- 1, 2 or "draw"
@@ -106,8 +110,19 @@ function Game:opponentOf(player)
     return self.players[3 - player.id]
 end
 
-function Game:castSpell(caster, spell)
+-- Stats hook: the simulation sets `onEvent` to collect what happens
+-- (casts, pickups, laser results, waves...). Off in normal play.
+function Game:emit(e)
+    if self.onEvent then
+        e.time = self.clock
+        self.onEvent(e)
+    end
+end
+
+-- source (optional): { effect, trigger } from the spellbook, for stats.
+function Game:castSpell(caster, spell, source)
     local t = self.data.tuning
+    self:emit({ type = "spell", player = caster, spell = spell, source = source })
     if spell == "attack" then
         -- slot = position within a volley cast on the same frame, so each
         -- simultaneous laser gets its own orb on screen.
@@ -117,6 +132,7 @@ function Game:castSpell(caster, spell)
         end
         self.lasers[#self.lasers + 1] = {
             caster = caster, target = self:opponentOf(caster), timer = t.spells.telegraph, slot = slot,
+            source = source,
         }
     elseif spell == "shield" then
         caster.shield = caster.shield + 1
@@ -136,6 +152,9 @@ function Game:fireLaser(laser)
         beam.result = tg:receiveHit(t.spells.attackDamage, c.x, c.y, t)
     end
     self.beams[#self.beams + 1] = beam
+    -- blocker: the target's effect that supplied the shield charge.
+    self:emit({ type = "laser", player = c, source = laser.source, result = beam.result,
+                blocker = beam.result == "blocked" and self.spellbooks[tg.id].effect or nil })
 end
 
 function Game:updateLasers(dt)
@@ -202,6 +221,7 @@ function Game:update(dt, inputs)
         return
     end
 
+    self.clock = self.clock + dt
     -- Order matters: movement sets "dashed", lasers set "hit", then
     -- spellbooks read both for their trap conditions.
     for k, p in ipairs(self.players) do p:update(dt, inputs[k], t, self.arena) end

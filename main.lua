@@ -4,6 +4,8 @@
 --
 -- Debug flags (after the game folder):
 --   love . --selftest   love . --shot   love . --shot-training   love . --bot
+--   lovec . --sim 500 [--seed 1] [--cap 300] [--p1 profile] [--p2 profile]
+--     (bot vs bot balance run, see src/sim.lua)
 -- Keys: F2 toggles the training room (Space switches its tiles), F3 hands P2
 -- to the bot (or back), F5 reloads code and data.
 
@@ -68,7 +70,29 @@ function love.load(args)
     math.randomseed(os.time())
     data = loadData()
 
-    for _, a in ipairs(args or {}) do
+    args = args or {}
+    for i, a in ipairs(args) do
+        if a == "--sim" then
+            local opts = { rounds = tonumber(args[i + 1]) or 200 }
+            for j = i + 2, #args - 1 do
+                local key, value = args[j]:match("^%-%-(%w+)$"), args[j + 1]
+                if key == "seed" or key == "cap" then opts[key] = tonumber(value) end
+                if key == "p1" or key == "p2" then opts[key] = value end
+            end
+            opts.write = function(path, text)
+                love.filesystem.write(path, text)
+                print("  saved to " .. love.filesystem.getSaveDirectory() .. "/" .. path)
+            end
+            opts.progress = function(k, n)
+                if k % 50 == 0 or k == n then io.write(string.format("\r  %d / %d rounds", k, n)); io.flush() end
+            end
+            require("src.sim").run(data, opts)
+            love.event.quit(0)
+            return
+        end
+    end
+
+    for _, a in ipairs(args) do
         if a == "--selftest" then
             local ok = require("src.selftest").run(data)
             love.event.quit(ok and 0 or 1)

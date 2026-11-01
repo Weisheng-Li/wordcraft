@@ -13,17 +13,21 @@
 --      denying words the enemy needs, skipping ones they'll reach first.
 --      If the enemy is racing me to it and it's within a dash, dash.
 --   6. Otherwise wait on an incoming wave's marker.
--- Numbers live under `bot` in tuning.json.
+-- Numbers live under `bot` in tuning.json. A profile (from `botProfiles`,
+-- for simulation A/B runs) overrides any of them, and can list
+-- `avoidWords` the bot never picks up.
 
 local Bot = {}
 Bot.__index = Bot
 
 local IDLE = { x = 0, y = 0, dash = false }
 
-function Bot.new(id, rand)
+-- profile: optional table of overrides for tuning.bot.
+function Bot.new(id, rand, profile)
     local self = setmetatable({}, Bot)
     self.id = id
     self.rand = rand
+    self.profile = profile or {}
     self.seen = setmetatable({}, { __mode = "k" }) -- laser -> time the bot noticed it
     self.time = 0
     return self
@@ -153,7 +157,7 @@ end
 function Bot:dodge(laser)
     local me, caster, arena, t = self.me, laser.caster, self.game.arena, self.tuning
     self.seen[laser] = self.seen[laser] or self.time
-    if self.time - self.seen[laser] < t.bot.reactionTime then return nil end
+    if self.time - self.seen[laser] < self.cfg.reactionTime then return nil end
     if me:isDashing() then return nil end
 
     -- Find the nearest spot the caster can't see (where I am, if hidden).
@@ -173,8 +177,8 @@ function Bot:raceDash(word, enemyBook)
     local mine = dist(me.x, me.y, word.x, word.y)
     local theirs = dist(self.enemy.x, self.enemy.y, word.x, word.y)
     local reach = t.dash.distance + t.words.pickupRadius - 2
-    return mine <= reach and mine > t.words.pickupRadius + t.bot.raceMinGap
-        and theirs <= mine * t.bot.raceRatio
+    return mine <= reach and mine > t.words.pickupRadius + self.cfg.raceMinGap
+        and theirs <= mine * self.cfg.raceRatio
         and boxClear(self.game.arena, me.x, me.y, word.x, word.y, t)
 end
 
@@ -214,7 +218,7 @@ function Bot:plan()
 
     -- 4. Enemy "close" trap armed: keep out of range.
     local avoid = enemyBook.trap and has(enemyBook.trap.conditions, "close")
-    local keepOff = close + t.bot.trapMargin
+    local keepOff = close + self.cfg.trapMargin
     if avoid and apart < keepOff then
         local x, y = self:bestSpot(function(x, y, d)
             if dist(x, y, enemy.x, enemy.y) < keepOff then return math.huge end
@@ -226,17 +230,18 @@ function Bot:plan()
     -- 5. Words.
     local best, bestScore = nil, 0
     for _, w in ipairs(g.wordfield.words) do
-        if book:canAccept(w.def) and not (avoid and dist(w.x, w.y, enemy.x, enemy.y) < keepOff) then
+        if book:canAccept(w.def) and not has(self.cfg.avoidWords, w.def.id)
+            and not (avoid and dist(w.x, w.y, enemy.x, enemy.y) < keepOff) then
             local mine = self:pathDist(self.field, w.x, w.y)
             if mine < math.huge then
                 local value = 1
-                if w.def.id == "attack" then value = value + t.bot.attackBonus end
+                if w.def.id == "attack" then value = value + self.cfg.attackBonus end
                 if enemyBook:canAccept(w.def) then
                     local theirs = self:pathDist(self.enemyField, w.x, w.y)
-                    if theirs < mine * t.bot.contestRatio then
-                        value = value * t.bot.lostCause -- they'll get there first
+                    if theirs < mine * self.cfg.contestRatio then
+                        value = value * self.cfg.lostCause -- they'll get there first
                     else
-                        value = value + t.bot.denyBonus
+                        value = value + self.cfg.denyBonus
                     end
                 end
                 local score = value / (mine + g.arena.tile)
@@ -264,6 +269,7 @@ function Bot:update(dt, game)
     self.time = self.time + dt
     if game.state ~= "fight" then return IDLE end
     self.game, self.tuning = game, game.data.tuning
+    self.cfg = setmetatable(self.profile, { __index = self.tuning.bot }) -- read live, like all tuning
     self.me, self.enemy = game.players[self.id], game:opponentOf(game.players[self.id])
     local arena = game.arena
     self.field, self.parent = flood(arena, tileOf(arena, self.me.x, self.me.y, self.tuning))

@@ -4,6 +4,12 @@ Two wizards fight in a top-down arena. Each player has a **spell template** with
 
 Status legend: **Decided** = agreed, build it. **Proposed** = a recommendation that can still change. **Open** = needs a decision before or during building.
 
+**This document is the hub for every design decision.** Any other design doc is linked here:
+
+| Doc | What it covers |
+|---|---|
+| [SIMULATION.md](SIMULATION.md) | Bot-vs-bot simulation: how to run it, every metric it reports and how to read it, and a log of results (§15) |
+
 ---
 
 ## 1. View and movement — Decided (numbers Proposed)
@@ -259,7 +265,14 @@ A sandbox for testing the UI and how templates and words combine. Later it can h
   6. Otherwise it waits on the nearest marker of the incoming wave.
 - Paths go over the 16 px tile grid and cut corners wherever the straight line is clear.
 - Numbers live under `bot` in `tuning.json`. `reactionTime` (how fast it runs for cover) and `raceRatio` (how readily it race-dashes) are the main difficulty settings.
-- Bot vs bot runs in the self-test (`bot vs bot plays a full round`) and prints words collected and HP. It's a first step toward headless balance runs.
+- Bot vs bot runs in the self-test (`bot vs bot plays a full round`) and prints words collected and HP.
+- **Profiles** (`botProfiles` in `tuning.json`) override any `bot` number for one side and can list `avoidWords` the bot never picks up, e.g. `noAccelerate`. They're for simulation A/B runs.
+
+### Simulation — Proposed
+
+`lovec . --sim 400` plays bot-vs-bot rounds with no window, much faster than real time, and reports balance metrics: round results, the current and future return of each template shape, trap hit rates, word spawning, and combat. The numbers describe the rules **as the bot plays them**, so they point at problems rather than prove them.
+
+**Full details: [SIMULATION.md](SIMULATION.md):** how to run it, every metric and how to read it, and the results log (first baseline: 2026-10-31).
 
 ## 16. Ideas for later
 
