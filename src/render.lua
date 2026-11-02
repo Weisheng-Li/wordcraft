@@ -401,16 +401,13 @@ local function drawLasers(game, sprites, time)
 end
 
 -- close range ring: a plain circle in the owner's colour around a
--- player whose template (filled in) or armed trap uses that condition, at
--- the real threshold distance.
+-- player whose armed trap uses that condition, at the real threshold
+-- distance. A half-written spell shows nothing until it's cast.
 local function drawConditionRings(game)
     local c = game.data.tuning.conditions
     local radius = { close = c.closeDistance }
     for k, book in ipairs(game.spellbooks) do
         local p, used = game.players[k], {}
-        for _, b in ipairs(book:blanks()) do
-            if b.word and radius[b.word] then used[b.word] = true end
-        end
         if book.trap then
             for _, id in ipairs(book.trap.conditions) do
                 if radius[id] then used[id] = true end
