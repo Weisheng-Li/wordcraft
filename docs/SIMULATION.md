@@ -26,8 +26,9 @@ lovec . --sim 1m [--stats] [--workers N] [--cap 300] [--p1 PROFILE] [--p2 PROFIL
 
 - **Speed:** rounds are spread over worker threads, one per logical CPU core. On the dev machine (8 cores, 16 threads) that's about **145 rounds per minute**: ~150 rounds in 1 min, ~1,450 in 10 min. 16 threads measured 15% faster than 8. One round alone takes about 2.7 s (a round averages ~160 s of game time, at a fixed 60 steps per second).
 - **Seeds:** every run uses a fresh random seed, so two runs of the same code give slightly different numbers. That difference is what the ± measures.
-- **Output:** a report in the console, plus a CSV saved to LÖVE's save folder (`%APPDATA%\LOVE\wordcraft\sim_<p1>_vs_<p2>.csv`).
-- **Profiles** override any `bot` number for one side, and can list `avoidWords` the bot never picks up, e.g. `"noAccelerate": { "avoidWords": ["accelerate"] }`. They're used for A/B runs.
+- **Output:** a report in the console, plus two CSVs saved to LÖVE's save folder: `%APPDATA%\LOVE\wordcraft\sim_<p1>_vs_<p2>.csv` (one row per template) and `sim_<p1>_vs_<p2>_rounds.csv` (`round, length, winner`).
+- **Profiles** override any `bot` number for one side, and can list `avoidWords` the bot never picks up, e.g. `"noAccelerate": { "avoidWords": ["accelerate"] }`. They're used for A/B runs. **Strategy profiles** also turn on flags that make the bot hold off on words (see "Strategy bots" in the results log). They're for testing only: the bot you play against (F3) is always the plain one.
+- **A/B against the plain bot:** run the profile once as P1 and once as P2 (`--p1 X`, then `--p2 X`, 2 min each, ~1,000 rounds together) and add up its wins. That cancels any side bias. ±1.6 points; a profile needs about 53% to beat the plain bot for real.
 
 ## Stats history
 
@@ -136,6 +137,36 @@ Some value is indirect. Speed, for example, means more words, which means more c
 ## Results log
 
 Newest first. Each entry records the bot version, because bot changes shift every number. Raw numbers for every gameplay commit are in the history of [STATS.md](STATS.md).
+
+### 2026-11-01 — strategy bots: what beats the plain bot
+
+- **Question:** the plain bot plays common sense and takes any word that fits. Which strategies win more against it by playing the rules (not by exploiting the bot)? Same rules and human limits as the 2026-11-01 run below.
+- **Mirror check first:** plain vs plain, 10 min, 2,569 rounds: P1 49.2%, so **no side bias** (the earlier P2 lean was noise). Win rate across chunks of that run: 100 rounds 43–60%, 200 rounds 44–55%, 400 rounds 45–54%, 700 rounds 47–52%. So the A/B setup above uses ~1,000 rounds, with the profile on both sides.
+- **Results** (profile's win rate vs the plain bot; flags in `src/bot.lua`, profiles in `botProfiles`):
+
+| Profile | What it does | Win rate |
+|---|---|---|
+| `attackLast` | The last spell blank of any template only takes `attack` | **64.5±1.5%** |
+| `best` | `attackLast` + attack pull 3, more race dashes, keep contesting | 63.5±1.2% |
+| `alNoShield` | `attackLast` + never take `shield` | 61.4±1.5% |
+| `afAttack3` | `attackFirst` with attack pull 3 | 60.6±1.5% |
+| `afNoAccel` | `attackFirst` + never take `accelerate` | 60.3±1.5% |
+| `afNoShield` | `attackFirst` + never take `shield` | 59.4±1.5% |
+| `afContest` | `attackFirst` + don't give up words the enemy is closer to | 59.1±1.5% |
+| `afRace` | `attackFirst` + dash for contested words much more often | 58.9±1.6% |
+| `afDeny` | `attackFirst` + 3× bonus for taking words the enemy needs | 57.3±1.6% |
+| `attackFirst` | `valueSpells` + attack pull 1.5 (was 0.3) | 57.2±1.9% |
+| `valueSpells` | A `repeat`'s spell blank only takes `attack` | 55.6±1.6% |
+| `afNoChase` | `attackFirst` + don't walk at the enemy to set off a `close` trap | 54.5±1.6% |
+| `lateFinish` | While trap/shield/speed is up, hold the last blank until 2 s are left | 49.4±2.0% |
+| `stackRepeat` | Don't fill a level-1 `repeat`; let it stack | 47.6±1.6% |
+| `stackWeak` | Don't fill a level-1 `combo` or `when`; let it stack, hoping for a `repeat` | 42.2±1.6% |
+
+- **Reading:**
+  - **One dominant rule: every finished template should carry an `attack`.** Saving the last spell blank for `attack` beats common sense about 2 to 1. Nothing else adds to it: word-grabbing tweaks (deny, race, contest) are worth ≤ 2 points each and don't stack on top of `attackLast`.
+  - **Shield and speed have little value of their own.** Skipping them costs little or even helps (`afNoAccel`, `afNoShield` ≥ `attackFirst`); they're only worth taking in a blank that isn't the attack's. Cause: they last only until the next template completes or times out (avg window 5 s), so finishing fast cuts your own buffs short, and 75% of shield charges expire unused. Next step: give them value of their own (e.g. their own timer).
+  - **Waiting to stack doesn't pay.** `stackWeak` gets 0.92 damage per cast vs the plain bot's 0.49, but finishes under half as many templates (4,077 vs 8,682) and deals less in total. Level 3 returns 0.40 per word vs 0.36 at level 1, not enough to cover the timeout spent waiting. Holding the last blank (`lateFinish`) breaks even: the longer trap window is lost on words the enemy takes meanwhile, and walking over a word picks it up anyway.
+  - **Chasing for `close` traps pays** (not chasing: −3 points).
 
 ### 2026-11-01 — repeating traps, `hit` removed, 0.75 s recharge
 

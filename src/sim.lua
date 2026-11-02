@@ -588,6 +588,11 @@ function Sim.finish(records, opts)
     if opts.write then
         local path = string.format("sim_%s_vs_%s.csv", opts.p1 or "default", opts.p2 or "default")
         opts.write(path, csv(S.templates))
+        local rounds = { "round,length,winner" }
+        for _, R in ipairs(records) do
+            rounds[#rounds + 1] = string.format("%d,%.2f,%s", R.round, R.length, R.winner)
+        end
+        opts.write(path:gsub("%.csv$", "_rounds.csv"), table.concat(rounds, "\n") .. "\n")
         out("")
         out("CSV (one row per finished or timed-out template): " .. path)
     end

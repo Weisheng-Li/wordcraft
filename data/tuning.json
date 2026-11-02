@@ -75,6 +75,22 @@
   "botProfiles": {
     "sharp": { "human": false },
     "noAccelerate": { "avoidWords": ["accelerate"] },
-    "noShield": { "avoidWords": ["shield"] }
+    "noShield": { "avoidWords": ["shield"] },
+    "valueSpells": { "valueSpells": true },
+    "stackWeak": { "stackWeak": true },
+    "stackRepeat": { "stackRepeat": true },
+    "lateFinish": { "lateFinish": true, "lateFinishAt": 2 },
+    "attackFirst": { "valueSpells": true, "attackBonus": 1.5 },
+    "attackLast": { "attackLast": true, "attackBonus": 1.5 },
+    "afNoShield": { "valueSpells": true, "attackBonus": 1.5, "avoidWords": ["shield"] },
+    "afNoAccel": { "valueSpells": true, "attackBonus": 1.5, "avoidWords": ["accelerate"] },
+    "afDeny": { "valueSpells": true, "attackBonus": 1.5, "denyBonus": 1.5 },
+    "afAttack3": { "valueSpells": true, "attackBonus": 3 },
+    "afNoChase": { "valueSpells": true, "attackBonus": 1.5, "noCloseChase": true },
+    "afRace": { "valueSpells": true, "attackBonus": 1.5, "raceRatio": 3, "raceMinGap": 0 },
+    "afContest": { "valueSpells": true, "attackBonus": 1.5, "contestRatio": 0.3, "lostCause": 1 },
+    "alNoShield": { "attackLast": true, "attackBonus": 1.5, "avoidWords": ["shield"] },
+    "best": { "attackLast": true, "attackBonus": 3, "raceRatio": 3, "raceMinGap": 0,
+              "contestRatio": 0.3, "lostCause": 1 }
   }
 }

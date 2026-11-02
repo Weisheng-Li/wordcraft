@@ -266,6 +266,43 @@ function Bot:raceDash(word, enemyBook)
     return nil
 end
 
+----------------------------------------------------------------------------
+-- Strategies (experiment): profile flags that make the bot hold off on a
+-- word it could take, to play the stacking and effect-window rules. The
+-- plain bot has none of them and takes anything that fits. Internal
+-- testing only (sim A/B runs); the bot you play (F3) has no profile.
+-- Results: docs/SIMULATION.md, "strategy bots".
+--   valueSpells: a repeat's last spell blank only takes `attack` (n beams).
+--   attackLast:  any template's last spell blank only takes `attack`.
+--   noCloseChase: don't walk at the enemy to set off my "close" trap.
+--   stackWeak:   don't fill a level-1 combo or when; let it time out and
+--                stack, hoping for a repeat on top.
+--   stackRepeat: don't fill a level-1 repeat; any stack multiplies it.
+--   lateFinish:  while my effect still works (trap armed, shield or
+--                speed up), hold the last blank until `lateFinishAt`
+--                seconds are left on the template.
+----------------------------------------------------------------------------
+
+function Bot:wantsNow(word, book)
+    local cfg, tpl = self.cfg, book.template
+    if not tpl then return true end
+    local open = book:openTypes()
+    if cfg.stackWeak and tpl.level == 1 and not tpl.n then return false end
+    if cfg.stackRepeat and tpl.level == 1 and tpl.n then return false end
+    if (cfg.attackLast or cfg.valueSpells and tpl.n) and word.def.type == "spell" and word.def.id ~= "attack" then
+        local spellsOpen = 0
+        for _, t in ipairs(open) do
+            if t == "spell" then spellsOpen = spellsOpen + 1 end
+        end
+        if spellsOpen == 1 then return false end
+    end
+    if cfg.lateFinish and #open == 1 and tpl.timeLeft > cfg.lateFinishAt then
+        local me = self.me
+        if book.trap or me.shield > 0 or me.accelerate > 0 then return false end
+    end
+    return true
+end
+
 -- 2-6. Everything that isn't dodging.
 function Bot:plan()
     local g, me, enemy, t = self.game, self.me, self.enemy, self.tuning
@@ -277,7 +314,7 @@ function Bot:plan()
     -- go collect words instead).
     local trap = book.trap
     if trap then
-        if has(trap.conditions, "close") and book:trapReady("close") then
+        if has(trap.conditions, "close") and book:trapReady("close") and not self.cfg.noCloseChase then
             return self:walkTo(enemy.x, enemy.y)
         elseif has(trap.conditions, "still") and book:trapReady("still") then
             return IDLE
@@ -316,6 +353,7 @@ function Bot:plan()
     local best, bestScore = nil, 0
     for _, w in ipairs(g.wordfield.words) do
         if self:canRead(w) and book:canAccept(w.def) and not has(self.cfg.avoidWords, w.def.id) -- canRead: human limit
+            and self:wantsNow(w, book)
             and not (avoid and dist(w.x, w.y, enemy.x, enemy.y) < keepOff) then
             local mine = self:pathDist(self.field, w.x, w.y)
             if mine < math.huge then
