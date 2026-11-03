@@ -16,7 +16,9 @@ Built with [LÖVE](https://love2d.org) 11.5. Game rules live in [docs/DESIGN.md]
 | Move   | `W` `A` `S` `D` | `↑` `←` `↓` `→` |
 | Dash   | `Left Shift`    | `Right Shift`  |
 
-`R` restarts after a round ends. `F2` toggles the **training room** (one player vs a dummy; `Space` switches which tiles are on the floor: templates, spells or conditions). `F3` hands P2 to the **bot** or gives it back (`love . --bot` starts with it on). `Esc` quits.
+`R` restarts after a round ends. `F2` toggles the **training room** (one player vs a dummy; `Space` switches which tiles are on the floor: templates, spells or conditions). `F3` hands P2 to the **bot** or gives it back (`love . --bot` starts with P2 set to AI).
+
+The game opens on the **character select** screen: movement keys move your cursor, your dash key confirms. Each side can be a person or the `AI`; once you confirm your own side, your keys can set up the other side too (that's how you set up a bot opponent alone). `Esc` un-confirms both sides. In a match, `Esc` returns to character select. Close the window to quit.
 
 ## Tuning and testing
 
@@ -25,6 +27,7 @@ Built with [LÖVE](https://love2d.org) 11.5. Game rules live in [docs/DESIGN.md]
 - `lovec . --selftest` runs a headless check of the spell rules.
 - `lovec . --shot` saves a screenshot after a few seconds to LÖVE's save folder, then quits.
 - `lovec . --shot-training` does the same for the training room.
+- `lovec . --shot-select` does the same for the character select screen.
 - `lovec . --sim 400` runs 400 bot-vs-bot rounds (or `--sim 1m` for as many as fit in a minute) on every CPU core with no window, and prints balance metrics, plus a CSV per template in LÖVE's save folder. `--stats` also rewrites `docs/STATS.md`. Add `--workers N`, `--cap SECONDS`, `--p1 PROFILE`, `--p2 PROFILE` (profiles: `botProfiles` in `data/tuning.json`). See [docs/SIMULATION.md](docs/SIMULATION.md).
 
 ## Sprites

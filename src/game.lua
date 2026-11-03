@@ -10,13 +10,15 @@ local Game = {}
 Game.__index = Game
 
 -- data: { tuning, arena, templates, words = { list, byId, byType }, training }
--- opts: { width, height, rand, mode = "versus" | "training" }
+-- opts: { width, height, rand, mode = "versus" | "training",
+--         characters = { id, id } (from data/characters.json; default wizards) }
 function Game.new(data, opts)
     local self = setmetatable({}, Game)
     self.data = data
     self.width, self.height = opts.width, opts.height
     self.rand = opts.rand
     self.mode = opts.mode or "versus"
+    self.characters = opts.characters or { "wizard", "wizard" }
     self:reset()
     return self
 end
@@ -72,10 +74,13 @@ function Game:reset()
     local arenaDef = training and self.data.training.arena or self.data.arena
     self.arena = Arena.new(arenaDef, self.width, self.height)
     local s1, s2 = self.arena.starts[1], self.arena.starts[2]
+    local chars = self.data.characters.byId
+    local c1, c2 = chars[self.characters[1]], chars[self.characters[2]]
     self.players = {
-        Player.new(1, s1.x, s1.y, "wizard_blue", t),
-        Player.new(2, s2.x, s2.y, training and "dummy" or "wizard_red", t),
+        Player.new(1, s1.x, s1.y, c1.sprite .. "_blue", t),
+        Player.new(2, s2.x, s2.y, training and "dummy" or (c2.sprite .. "_red"), t),
     }
+    self.players[1].character, self.players[2].character = c1.id, c2.id
     self.players[2].facing = -1
 
     local cast = function(caster, spell, source) self:castSpell(caster, spell, source) end

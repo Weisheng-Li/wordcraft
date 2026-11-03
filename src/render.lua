@@ -743,6 +743,108 @@ local function drawBanner(game)
     end
 end
 
+---------------------------------------------------------------- character select
+
+local SELECT_PANEL = { y = 14, w = 152 }
+local PLAYER_COLOR = { "_blue", "_red" }
+local KEY_HINT = { "WASD + L-shift", "arrows + R-shift" }
+
+local function drawPips(label, n, x, y)
+    setColor(C.dim)
+    love.graphics.print(label, x, y)
+    local px = x + fonts.small:getWidth(label) + 3
+    for i = 1, 3 do
+        setColor(i <= n and C.timer or C.hpEmpty)
+        love.graphics.rectangle("fill", px + (i - 1) * 6, y + 3, 4, 4)
+    end
+end
+
+-- Left/right arrows around a value; bright on the row the cursor is on.
+local function drawChoiceArrows(cx, y, halfW, active, time)
+    local nudge = active and math.floor(time * 3) % 2 or 0
+    setColor(active and C.text or C.hpEmpty)
+    love.graphics.print("<", math.floor(cx - halfW - 6 - nudge), y)
+    love.graphics.print(">", math.floor(cx + halfW + 1 + nudge), y)
+end
+
+local function drawSelectPanel(sel, k, x, sprites, time)
+    local p = sel.panels[k]
+    local char = sel:character(k)
+    local col = C.player[k]
+    local y0, w = SELECT_PANEL.y, SELECT_PANEL.w
+    local cx = x + w / 2
+    local f = fonts.small
+    local driven = sel:panelFor(1) == k or sel:panelFor(2) == k
+
+    -- Control row.
+    love.graphics.setFont(f)
+    setColor(col)
+    love.graphics.print("P" .. k, x + 5, y0 + 4)
+    local control = p.control == "ai" and "AI" or "HUMAN"
+    setColor(C.text)
+    printCentered(control, f, cx, y0 + 4)
+    drawChoiceArrows(cx, y0 + 4, f:getWidth(control) / 2 + 2, driven and not p.ready and p.row == 1, time)
+
+    -- Character row: big sprite (or a "?" silhouette for one not built yet).
+    local portraitY = y0 + 20
+    local img = char.sprite and sprites[char.sprite .. PLAYER_COLOR[k] .. (p.ready and "_cast" or "")]
+    if img then
+        local iw, ih = img:getDimensions()
+        setColor(C.shadow)
+        love.graphics.ellipse("fill", cx, portraitY + 72, 18, 5)
+        love.graphics.setColor(1, 1, 1)
+        love.graphics.draw(img, math.floor(cx), portraitY + 72, 0, k == 1 and 3 or -3, 3, iw / 2, ih)
+    else
+        setColor(C.hpEmpty)
+        love.graphics.rectangle("fill", cx - 18, portraitY + 6, 36, 66)
+        setColor(C.dim)
+        printCentered("?", fonts.big, cx, portraitY + 30)
+    end
+    drawChoiceArrows(cx, portraitY + 34, 34, driven and not p.ready and p.row == 2, time)
+
+    setColor(C.text)
+    printCentered(char.name, fonts.big, cx, y0 + 94)
+    love.graphics.setFont(f)
+    setColor(C.dim)
+    for i, line in ipairs(char.lines or {}) do
+        printCentered(line, f, cx, y0 + 112 + (i - 1) * 9)
+    end
+    drawPips("speed", char.speed or 0, x + 8, y0 + 140)
+    drawPips("difficulty", char.difficulty or 0, x + 74, y0 + 140)
+
+    -- Footer: who sets this panel, or its state.
+    local footer, footerCol
+    if p.refused > 0 then
+        footer, footerCol = "coming soon", (math.floor(p.refused * 10) % 2 == 0) and C.hpText or C.dim
+    elseif p.ready then
+        footer, footerCol = "READY", col
+    elseif not char.available then
+        footer, footerCol = "coming soon", C.dim
+    elseif sel.panels[3 - k].ready then
+        footer, footerCol = "P" .. (3 - k) .. " can set this too", C.dim
+    else
+        footer, footerCol = KEY_HINT[k], C.dim
+    end
+    setColor(footerCol)
+    printCentered(footer, f, cx, y0 + 151)
+end
+
+function Render.drawSelect(sel, sprites, time)
+    love.graphics.clear(C.bg)
+    setColor(C.dim)
+    local title = (sel.panels[1].ready and sel.panels[2].ready) and "get ready!" or "choose your character"
+    printCentered(title, fonts.small, 160, 2)
+    if sel:anyReady() then
+        love.graphics.setFont(fonts.small)
+        setColor(C.hpEmpty)
+        love.graphics.print("esc: reset", 4, 2)
+    end
+    drawSelectPanel(sel, 1, 4, sprites, time)
+    drawSelectPanel(sel, 2, 164, sprites, time)
+    setColor(C.timer)
+    printCentered("VS", fonts.big, 160, 60)
+end
+
 ---------------------------------------------------------------- entry
 
 local function spawnPickups(game)

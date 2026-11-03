@@ -39,8 +39,11 @@ Status legend: **Decided** = agreed, build it. **Proposed** = a recommendation t
 |---|---|---|
 | Move | `W` `A` `S` `D` | `↑` `←` `↓` `→` |
 | Dash | `Left Shift` | `Right Shift` |
-| Quit | `Esc` | |
+| Back to character select (in a match) | `Esc` | |
+| Reset confirms (on character select) | `Esc` | |
 | Restart (after a round ends) | `R` | |
+
+On the character select screen (§17), movement keys move the cursor and each player's dash key confirms.
 
 Many keyboards can't register lots of keys pressed at once (ghosting), so test with both players mashing keys. Swap keys if needed.
 
@@ -312,3 +315,15 @@ Related options, if this isn't enough:
 `I stand still` doesn't help with timing an attack: it describes what *you* do, and it leaves you open. It stays for now (threshold lowered to 0.75 s) while we playtest how it plays.
 
 **Idea:** `enemy dashes` fires the moment the opponent starts a dash. Dash has a 2 s cooldown, so right after they dash **they can't dodge**: a beam fired then lands while their dash is still recharging, unless they reach cover or have a shield. That makes `when enemy dashes, cast attack` a real counter to dash-dodging, and a mirror of `I dash`.
+
+## 17. Character select — Proposed
+
+The first screen when the game starts, and where `Esc` goes from a match. Each player picks a character and whether a person or the bot plays that side. Characters are listed in `data/characters.json` (name, sprite, a few overview lines, speed and difficulty pips). One that isn't built yet is marked `available: false`: it's shown with "coming soon" and can't be confirmed. Character ideas: [CHARACTERS.md](CHARACTERS.md).
+
+- **Two panels**, P1 (blue) on the left and P2 (red) on the right. Each has two rows: **control** (`HUMAN` / `AI`) at the top, and **character** under it, showing the sprite large, the name, the overview lines and the pips. The cursor starts on the character row.
+- **Keys:** up/down switch rows, left/right change the value on the current row (the character list wraps), the dash key confirms. P1 uses `WASD` + `Left Shift`, P2 the arrows + `Right Shift`.
+- **Your keys drive your own panel until you confirm. After that, they also drive the other panel until it's confirmed.** That's how one person sets up a bot opponent: confirm your own side, set the other side to `AI`, pick its character, confirm. On a shared keyboard the second player can still use their own keys on their panel.
+- **`Esc` resets:** it un-confirms both panels, so both sides can change their picks again. With nothing confirmed it does nothing, and the `esc: reset` hint is hidden. `Esc` never quits the game: close the window for that.
+- When both panels are confirmed, the match starts after `0.4 s`.
+- The choices are remembered for the session, so `Esc` from a match comes back with the same setup (nothing confirmed). `R` after a round still restarts right away with the same characters.
+- `love . --bot` starts with P2 set to `AI`. `F3` still hands P2 to the bot (or back) during a match. `F2` opens the training room from the select screen or a match; pressing `F2` again in training returns to the select screen. The screenshot flags (`--shot`, `--shot-training`) skip this screen; `--shot-select` captures it instead.

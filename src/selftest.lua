@@ -3,6 +3,7 @@
 
 local Bot = require("src.bot")
 local Game = require("src.game")
+local Select = require("src.select")
 local Spellbook = require("src.spellbook")
 
 local SelfTest = {}
@@ -839,8 +840,71 @@ function SelfTest.showcaseTraining(g)
     g.wordfield.events = { { def = w.def, x = p.x - 30, y = p.y - 10, player = p } }
 end
 
+---------------------------------------------------------------- character select
+
+local selectTests = {}
+
+local function newSelect(data)
+    return Select.new(data.characters.list), data
+end
+
+local function confirmBoth(sel)
+    sel:press(1, "confirm"); sel:press(2, "confirm")
+    sel:update(Select.START_DELAY + 0.01)
+end
+
+selectTests["select: both confirm, match starts after the delay"] = function(sel)
+    sel:press(1, "confirm"); sel:press(2, "confirm")
+    sel:update(Select.START_DELAY / 2)
+    assert(not sel.result, "should wait for the start delay")
+    sel:update(Select.START_DELAY)
+    assert(sel.result, "match should start")
+    assert(sel.result.characters[1] == "wizard" and sel.result.control[2] == "human", "default setup")
+end
+
+selectTests["select: a character that isn't built can't be confirmed"] = function(sel)
+    sel:press(1, "right") -- shield mage, available = false
+    assert(not sel:character(1).available, "second character should be locked")
+    sel:press(1, "confirm")
+    assert(not sel.panels[1].ready and sel.panels[1].refused > 0, "confirm should be refused")
+    sel:press(1, "left"); sel:press(1, "confirm")
+    assert(sel.panels[1].ready, "wizard should confirm")
+end
+
+selectTests["select: once confirmed, your keys set up the other side"] = function(sel)
+    sel:press(1, "confirm")
+    assert(sel:panelFor(1) == 2, "P1 should now drive P2's panel")
+    sel:press(1, "up"); sel:press(1, "right") -- control row: human -> AI
+    sel:press(1, "confirm")
+    sel:update(Select.START_DELAY + 0.01)
+    assert(sel.result and sel.result.control[1] == "human" and sel.result.control[2] == "ai",
+        "P2 should be set to AI by P1")
+end
+
+selectTests["select: esc un-confirms both panels"] = function(sel)
+    sel:press(1, "confirm"); sel:press(2, "confirm")
+    sel:reset()
+    assert(not sel:anyReady(), "both should be un-confirmed")
+    sel:update(Select.START_DELAY + 0.01)
+    assert(not sel.result, "match shouldn't start after a reset")
+    sel:reset() -- nothing confirmed: does nothing
+    assert(not sel:anyReady(), "still nothing confirmed")
+end
+
+selectTests["select: remembers the last setup"] = function(_, data)
+    local sel = Select.new(data.characters.list, { characters = { "wizard", "shieldmage" }, control = { "ai", "human" } })
+    assert(sel:character(2).id == "shieldmage" and sel.panels[1].control == "ai", "setup should carry over")
+    assert(not sel.panels[1].ready and not sel.panels[2].ready, "nothing confirmed")
+end
+
+selectTests["select: the chosen characters reach the players"] = function(sel, data)
+    confirmBoth(sel)
+    local g = Game.new(data, { width = W, height = H, rand = math.random, characters = sel.result.characters })
+    assert(g.players[1].character == "wizard" and g.players[2].sprite == "wizard_red", "players should use the picks")
+end
+
 function SelfTest.run(data)
-    local suites = { { tests, newFight }, { trainingTests, newTraining } }
+    local suites = { { tests, newFight }, { trainingTests, newTraining }, { selectTests, newSelect } }
     local total, failed = 0, 0
     for _, suite in ipairs(suites) do
         local list, make = suite[1], suite[2]

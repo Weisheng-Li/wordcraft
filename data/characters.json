@@ -1,0 +1,29 @@
+{
+  "characters": [
+    {
+      "id": "wizard",
+      "name": "Wizard",
+      "sprite": "wizard",
+      "available": true,
+      "lines": [
+        "Fill word templates to cast.",
+        "Templates stack on timeout:",
+        "bigger spells, more words."
+      ],
+      "speed": 3,
+      "difficulty": 3
+    },
+    {
+      "id": "shieldmage",
+      "name": "Shield Mage",
+      "available": false,
+      "lines": [
+        "Shields never expire.",
+        "Slam hits all around, through",
+        "walls; costs shield. Slower."
+      ],
+      "speed": 2,
+      "difficulty": 1
+    }
+  ]
+}

@@ -14,7 +14,11 @@ return function(read)
         byType[w.type] = byType[w.type] or {}
         table.insert(byType[w.type], w)
     end
+    local characters = load("data/characters.json").characters
+    local charactersById = {}
+    for _, c in ipairs(characters) do charactersById[c.id] = c end
     return {
+        characters = { list = characters, byId = charactersById },
         tuning = load("data/tuning.json"),
         arena = load("data/arena.json"),
         templates = load("data/templates.json").templates,

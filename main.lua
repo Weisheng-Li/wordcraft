@@ -3,17 +3,19 @@
 -- integer factor so pixels stay crisp.
 --
 -- Debug flags (after the game folder):
---   love . --selftest   love . --shot   love . --shot-training   love . --bot
+--   love . --selftest   love . --shot   love . --shot-training   love . --shot-select   love . --bot
 --   lovec . --sim 400 | --sim 1m [--stats] [--workers 8] [--cap 300] [--p1 profile] [--p2 profile]
 --     (bot vs bot balance run: a number of rounds, or minutes; --stats
 --     rewrites docs/STATS.md. See docs/SIMULATION.md.)
--- Keys: F2 toggles the training room (Space switches its tiles), F3 hands P2
--- to the bot (or back), F5 reloads code and data.
+-- The game opens on the character select screen (Esc in a match goes back
+-- to it). Keys: F2 toggles the training room (Space switches its tiles), F3
+-- hands P2 to the bot (or back), F5 reloads code and data.
 
 local loadData = require("src.data")
 local Bot = require("src.bot")
 local Game = require("src.game")
 local Render = require("src.render")
+local Select = require("src.select")
 
 local GAME_W, GAME_H = 320, 180
 
@@ -33,15 +35,34 @@ local time = 0
 local shotAt -- --shot: capture the canvas at this time, then quit
 local mode = "versus" -- F2 toggles the training room
 local showcased = false
-local bot -- P2's bot while F3 has it on (versus only)
+local screen = "select" -- "select" (character select) or "game"
+local selectScreen      -- the Select while on that screen
+-- Last choices on the select screen, kept for the session.
+local setup = { characters = { "wizard", "wizard" }, control = { "human", "human" } }
+local bots = {}         -- bots[k]: player k's bot when setup says "ai" (versus only)
+
+local function makeBots()
+    for k = 1, 2 do
+        bots[k] = setup.control[k] == "ai" and Bot.new(k, math.random) or nil
+    end
+end
 
 local function toggleBot()
-    bot = not bot and Bot.new(2, math.random) or nil
-    print("P2: " .. (bot and "bot" or "human"))
+    setup.control[2] = setup.control[2] == "ai" and "human" or "ai"
+    makeBots()
+    print("P2: " .. (bots[2] and "bot" or "human"))
 end
 
 local function newGame()
-    game = Game.new(data, { width = GAME_W, height = GAME_H, rand = math.random, mode = mode })
+    game = Game.new(data, { width = GAME_W, height = GAME_H, rand = math.random, mode = mode,
+                            characters = setup.characters })
+    screen = "game"
+    dashPressed = { false, false }
+end
+
+local function openSelect()
+    selectScreen = Select.new(data.characters.list, setup)
+    screen, mode = "select", "versus"
 end
 
 function love.load(args)
@@ -99,10 +120,12 @@ function love.load(args)
             return
         elseif a == "--shot-training" then
             shotAt, mode, showcased = 2.5, "training", "training"
+        elseif a == "--shot-select" then
+            shotAt, showcased = 0.5, "select"
         elseif a == "--shot" then
             shotAt = 3.85
         elseif a == "--bot" then
-            toggleBot()
+            setup.control[2] = "ai"
         end
     end
 
@@ -118,7 +141,8 @@ function love.load(args)
         end
     end
 
-    newGame()
+    makeBots()
+    if shotAt and showcased ~= "select" then newGame() else openSelect() end
 end
 
 local function readInput(k)
@@ -135,12 +159,37 @@ local function readInput(k)
 end
 
 function love.update(dt)
-    if not game then return end
     dt = math.min(dt, 1 / 30) -- avoid huge steps after a window drag/stall
     time = time + dt
-    local p2 = readInput(2) -- read anyway so a held dash doesn't carry over
-    if bot and game.mode == "versus" then p2 = bot:update(dt, game) end
-    game:update(dt, { readInput(1), p2 })
+    if screen == "select" then
+        if showcased == "select" then
+            -- P1 confirmed, now setting up P2: AI, hovering the locked character.
+            for _, action in ipairs({ "confirm", "up", "right", "down", "right" }) do selectScreen:press(1, action) end
+            showcased = true
+        end
+        selectScreen:update(dt)
+        if selectScreen.result then
+            setup = selectScreen.result
+            makeBots()
+            newGame()
+        end
+        if shotAt and time >= shotAt then
+            love.graphics.setCanvas(canvas)
+            Render.drawSelect(selectScreen, sprites, time)
+            love.graphics.setCanvas()
+            canvas:newImageData():encode("png", "shot.png")
+            print("screenshot: " .. love.filesystem.getSaveDirectory() .. "/shot.png")
+            love.event.quit()
+        end
+        return
+    end
+    if not game then return end
+    local inputs = {}
+    for k = 1, 2 do
+        inputs[k] = readInput(k) -- read anyway so a held dash doesn't carry over
+        if bots[k] and game.mode == "versus" then inputs[k] = bots[k]:update(dt, game) end
+    end
+    game:update(dt, inputs)
 
     -- Screenshot sample scenes run between the game and render updates so
     -- render sees anything they inject (e.g. a pickup event).
@@ -166,9 +215,13 @@ function love.update(dt)
 end
 
 function love.draw()
-    if not game then return end
+    if not canvas then return end
     love.graphics.setCanvas(canvas)
-    Render.draw(game, sprites, time)
+    if screen == "select" then
+        Render.drawSelect(selectScreen, sprites, time)
+    else
+        Render.draw(game, sprites, time)
+    end
     love.graphics.setCanvas()
 
     -- Integer scale, centered (letterboxed).
@@ -182,12 +235,31 @@ function love.draw()
     love.graphics.draw(canvas, ox, oy, 0, scale, scale)
 end
 
+-- Select screen: movement keys move the cursor, the dash key confirms.
+local SELECT_ACTIONS = { up = "up", down = "down", left = "left", right = "right", dash = "confirm" }
+
 function love.keypressed(key)
-    if key == "escape" then love.event.quit() end
     if key == "f5" then love.event.quit("restart") end -- reloads code and data from disk
     if key == "f2" then
-        mode = (mode == "versus") and "training" or "versus"
-        newGame()
+        if mode == "training" then
+            openSelect()
+        else
+            mode = "training"
+            newGame()
+        end
+        return
+    end
+    if screen == "select" then
+        if key == "escape" then selectScreen:reset() end
+        for k, c in ipairs(CONTROLS) do
+            for name, action in pairs(SELECT_ACTIONS) do
+                if key == c[name] then selectScreen:press(k, action) end
+            end
+        end
+        return
+    end
+    if key == "escape" then
+        openSelect()
         return
     end
     if key == "f3" then toggleBot() end
