@@ -14,6 +14,12 @@
 --      denying words the enemy needs, skipping ones they'll reach first.
 --      If the enemy is racing me to it and it's within a dash, dash.
 --   6. Otherwise wait on an incoming wave's marker.
+-- Bulwark (its dash key raises the shield to parry instead of dashing):
+--   1. Instead of hiding from a noticed laser, keep doing whatever the plan
+--      says and parry about `parryLead` seconds before it fires, give or
+--      take `parryJitter` (timing error, ~80% land in the window). With the parry
+--      on cooldown, hide as usual. A "dash" trap fires on a parry, so rule
+--      2 parries to set it off. Never race-dashes.
 -- On top of these, "human limits" (their own section below) weaken the bot
 -- on purpose: a reaction time, sometimes missing an aim ray, greed for a
 -- nearby word over cover, and a moment to read each new word.
@@ -173,6 +179,54 @@ function Bot:threat()
     return soonest
 end
 
+-- 1. Bulwark: the soonest laser aimed at me, if the parry is ready and
+-- I've noticed it. Returns my input: the plan, plus the parry key at the
+-- press moment picked for that laser. Nil = parry not ready (hide).
+-- Timing error (human limit): each noticed laser gets its own press moment,
+-- `parryLead` seconds before it lands plus normal noise of `parryJitter`
+-- (standard deviation). Too early and the window closes first; too late
+-- and the beam lands first, and the press still happens (and still costs
+-- the cooldown), like a person's mistimed parry.
+function Bot:parryInput()
+    local me, t, cfg = self.me, self.tuning, self.cfg
+    if me:special(t) ~= "parry" then return nil end
+    -- A late press is still pressed after its beam is gone.
+    if self.parryAt and self.game.clock >= self.parryAt then
+        self.parryAt = nil
+        if me:canSpecial(t) then
+            local input = self:plan() or IDLE
+            return { x = input.x, y = input.y, dash = true }
+        end
+    end
+    if not me:canSpecial(t) then self.parryAt = nil; return nil end
+    local soonest
+    for _, l in ipairs(self.game.lasers) do
+        if l.target == me and (not soonest or l.timer < soonest.timer) then soonest = l end
+    end
+    if not soonest then return self.parryAt and (self:plan() or IDLE) or nil end
+    if not self:noticed(soonest) then return nil end -- human limits, as for hiding
+    local s = self.seen[soonest] or {}
+    self.seen[soonest] = s
+    if not s.pressAt then
+        local lead = cfg.parryLead
+        if self:human() then lead = lead + self:gauss() * (cfg.parryJitter or 0) end
+        s.pressAt = self.game.clock + soonest.timer - lead
+        if not self.parryAt or s.pressAt < self.parryAt then self.parryAt = s.pressAt end
+    end
+    local input = self:plan() or IDLE
+    if self.game.clock >= self.parryAt then
+        self.parryAt = nil
+        return { x = input.x, y = input.y, dash = true }
+    end
+    return input
+end
+
+-- A standard normal random number (Box-Muller), from the bot's own rand.
+function Bot:gauss()
+    local u = math.max(self.rand(), 1e-9)
+    return math.sqrt(-2 * math.log(u)) * math.cos(2 * math.pi * self.rand())
+end
+
 function Bot:dodge(laser)
     local me, caster, arena = self.me, laser.caster, self.game.arena
     if not self:noticed(laser) then return nil end -- human limit
@@ -246,6 +300,7 @@ end
 -- (but walking wouldn't take a moment anyway). Returns that direction.
 function Bot:raceDash(word, enemyBook)
     local me, t = self.me, self.tuning
+    if me:special(t) ~= "dash" then return nil end -- the Bulwark's key parries
     if me.dashCooldown > 0 or me:isDashing() or not enemyBook:canAccept(word.def) then return nil end
     local mine = dist(me.x, me.y, word.x, word.y)
     local theirs = dist(self.enemy.x, self.enemy.y, word.x, word.y)
@@ -399,8 +454,10 @@ function Bot:update(dt, game)
     self.enemyField = flood(arena, tileOf(arena, self.enemy.x, self.enemy.y, self.tuning))
     for _, w in ipairs(game.wordfield.words) do self.wordSeen[w] = self.wordSeen[w] or self.time end
 
-    local laser = self:threat()
-    local input = laser and self:dodge(laser)
+    -- Bulwark parries instead of hiding while it can; anyone else hides.
+    local input = self:parryInput()
+    local laser = not input and self:threat()
+    input = input or (laser and self:dodge(laser))
     return snap8(input or self:plan() or IDLE)
 end
 

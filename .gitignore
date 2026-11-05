@@ -16,3 +16,6 @@ desktop.ini
 
 # Dev loop restart trigger
 .dev/
+
+# Local dev shortcut (quick start), see README
+data/dev.json

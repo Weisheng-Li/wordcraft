@@ -42,7 +42,7 @@ local function newStats()
         rounds = {},     -- { length, winner }
         templates = {},  -- CSV rows: one per finished or timed-out template
         traps = {},      -- trigger -> { beams, hit, blocked, dodged, wall }
-        lasers = { hit = 0, blocked = 0, dodged = 0, wall = 0 },
+        lasers = { hit = 0, blocked = 0, dodged = 0, wall = 0, parried = 0 },
         shield = { gained = 0, used = 0, expired = 0 },
         accel = { gained = 0, time = 0, stackTime = 0, picksFast = 0, picksNormal = 0, playerTime = 0 },
         waves = { count = 0, early = 0, leftovers = 0, gaps = {} },
@@ -57,7 +57,8 @@ function Sim.playRound(data, roundNo, opts)
     math.randomseed(opts.seed * 100003 + roundNo)
     local S = newStats()
     local profiles = data.tuning.botProfiles or {}
-    local g = Game.new(data, { width = W, height = H, rand = math.random })
+    local g = Game.new(data, { width = W, height = H, rand = math.random,
+                               characters = { opts.c1 or "wizard", opts.c2 or "wizard" } })
     local bots = {
         Bot.new(1, math.random, profiles[opts.p1]),
         Bot.new(2, math.random, profiles[opts.p2]),
@@ -121,7 +122,7 @@ function Sim.playRound(data, roundNo, opts)
                 local row = rowOf[src.effect]
                 if row and r == "hit" then row.damage = row.damage + 1 end
                 local key = src.trigger or "plain cast"
-                local tr = S.traps[key] or { beams = 0, hit = 0, blocked = 0, dodged = 0, wall = 0 }
+                local tr = S.traps[key] or { beams = 0, hit = 0, blocked = 0, dodged = 0, wall = 0, parried = 0 }
                 S.traps[key] = tr
                 tr.beams = tr.beams + 1
                 tr[r] = tr[r] + 1
@@ -487,11 +488,11 @@ local function report(records, S, out)
 
     -- 5. Combat
     local L = S.lasers
-    local beams = L.hit + L.blocked + L.dodged + L.wall
+    local beams = L.hit + L.blocked + L.dodged + L.wall + (L.parried or 0)
     local function beamShare(result)
         return pctSE(ratio(records, function(R)
             local x = R.lasers
-            return x[result], x.hit + x.blocked + x.dodged + x.wall
+            return x[result], x.hit + x.blocked + x.dodged + x.wall + (x.parried or 0)
         end))
     end
     out("")
@@ -577,8 +578,9 @@ function Sim.finish(records, opts)
     local S = Sim.merge(records)
     local out = opts.out or print
     out("")
-    out(string.format("=== Simulation: %d rounds, P1 %s vs P2 %s, cap %ds ===",
-        #records, opts.p1 or "default", opts.p2 or "default", opts.cap))
+    out(string.format("=== Simulation: %d rounds, P1 %s%s vs P2 %s%s, cap %ds ===",
+        #records, opts.c1 or "wizard", opts.p1 and (" (" .. opts.p1 .. ")") or "",
+        opts.c2 or "wizard", opts.p2 and (" (" .. opts.p2 .. ")") or "", opts.cap))
     out("")
     local lines = {}
     report(records, S, function(s)
@@ -586,7 +588,8 @@ function Sim.finish(records, opts)
         out(s)
     end)
     if opts.write then
-        local path = string.format("sim_%s_vs_%s.csv", opts.p1 or "default", opts.p2 or "default")
+        local function side(c, p) return (c and c ~= "wizard" and (c .. "_") or "") .. (p or "default") end
+        local path = string.format("sim_%s_vs_%s.csv", side(opts.c1, opts.p1), side(opts.c2, opts.p2))
         opts.write(path, csv(S.templates))
         local rounds = { "round,length,winner" }
         for _, R in ipairs(records) do

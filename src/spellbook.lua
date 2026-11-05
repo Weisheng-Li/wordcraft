@@ -208,10 +208,11 @@ end
 -- Remove whatever the previous template produced (the effect window ends).
 function Spellbook:clearEffect()
     if self.effect then
-        self.emit({ type = "effectEnd", player = self.player, effect = self.effect, shieldLeft = self.player.shield })
+        self.emit({ type = "effectEnd", player = self.player, effect = self.effect, shieldLeft = not self.player:rules(self.data.tuning).shieldLasts and self.player.shield or 0 })
         self.effect = nil
     end
-    self.player.shield = 0
+    -- The Bulwark's charges outlast the window (CHARACTERS.md).
+    if not self.player:rules(self.data.tuning).shieldLasts then self.player.shield = 0 end
     self.player.accelerate = 0
     self.trap = nil
     self.casting = nil

@@ -12,8 +12,9 @@ local W, H = 320, 180
 local DT = 1 / 60
 local IDLE = { x = 0, y = 0, dash = false }
 
-local function newFight(data)
-    local g = Game.new(data, { width = W, height = H, rand = math.random })
+-- characters (optional): { id, id }, default wizards.
+local function newFight(data, characters)
+    local g = Game.new(data, { width = W, height = H, rand = math.random, characters = characters })
     g:update(data.tuning.round.countdown + 0.01, { IDLE, IDLE })
     assert(g.state == "fight", "countdown should end")
     -- Move both players onto the open row (row 3) with a clear line between them.
@@ -464,6 +465,37 @@ end
 
 local trainingTests = {}
 
+-- Walk P1 toward (x, y) until the pick happens (or give up after 4 s).
+local function walkInto(g, x, y)
+    for _ = 1, 240 do
+        if not g.trainingPicks then return end
+        local p = g.players[1]
+        local dx, dy = x - p.x, y - p.y
+        local len = math.max(math.sqrt(dx * dx + dy * dy), 0.001)
+        g:update(DT, { { x = dx / len, y = dy / len, dash = false }, IDLE })
+    end
+end
+
+trainingTests["training: walk into a character to play it; then the tiles appear"] = function(g)
+    g = Game.new(g.data, { width = W, height = H, rand = math.random, mode = "training", pickCharacter = true })
+    assert(g.trainingPicks and #g.trainingPicks >= 2, "every available character should stand in the room")
+    assert(#g.wordfield.words == 0, "no tiles while picking")
+    assert(g.players[1].character == "ghost" and g.players[1].sprite == "ghost", "you start as the ghost")
+    g:nextTrainingCategory()
+    assert(g.trainingPicks, "space does nothing while picking")
+    local mage
+    for _, pk in ipairs(g.trainingPicks) do if pk.id == "shieldmage" then mage = pk end end
+    walkInto(g, mage.x, mage.y)
+    local p = g.players[1]
+    assert(not g.trainingPicks, "the pick should be over")
+    assert(p.character == "shieldmage" and p.sprite == "shieldmage_blue", "P1 should now be the Bulwark")
+    assert(#g.wordfield.words > 0, "tiles should appear")
+end
+
+trainingTests["training: no character pick unless asked (tiles right away)"] = function(g)
+    assert(not g.trainingPicks and #g.wordfield.words > 0, "plain training starts with tiles")
+end
+
 trainingTests["training: template tiles start and stack to the max, then refuse"] = function(g)
     local book = g.spellbooks[1]
     assert(not book.template, "starts empty")
@@ -827,6 +859,17 @@ end
 
 -- Sample scene for `--shot-training`: a stacked template, the player inside
 -- the dummy's range (so it starts firing), and a pickup in flight.
+-- --shot-parry: the wizard's beam lands on the Bulwark's raised shield
+-- right after the fight starts (the screenshot catches the burst).
+function SelfTest.showcaseParry(g)
+    local m, w = g.players[1], g.players[2]
+    local _, y = g.arena:tileCenter(1, 3)
+    m.x, m.y, w.x, w.y = 120, y, 220, y
+    g:castSpell(w, "attack")
+    g.lasers[#g.lasers].timer = 0.02
+    m:startParry(g.data.tuning)
+end
+
 function SelfTest.showcaseTraining(g)
     local t = g.data.tuning
     local book, p, d = g.spellbooks[1], g.players[1], g.players[2]
@@ -838,6 +881,213 @@ function SelfTest.showcaseTraining(g)
     local w
     for _, tl in ipairs(g.wordfield.words) do if tl.def.label == "when" then w = tl end end
     g.wordfield.events = { { def = w.def, x = p.x - 30, y = p.y - 10, player = p } }
+end
+
+---------------------------------------------------------------- Bulwark
+
+local PARRY = { x = 0, y = 0, dash = true }
+
+-- P1 Bulwark vs P2 wizard, on the open row as usual.
+local function mageFight(g)
+    return newFight(g.data, { "shieldmage", "wizard" })
+end
+
+-- Fire one wizard beam at the mage and press parry `early` seconds before
+-- it lands. Returns the beam's result.
+local function parryAt(g, early)
+    local results = {}
+    g.onEvent = function(e) if e.type == "laser" then results[#results + 1] = e.result end end
+    g:castSpell(g.players[2], "attack")
+    step(g, g.data.tuning.spells.telegraph - early)
+    step(g, DT, { PARRY, IDLE })
+    step(g, early + 0.1)
+    g.onEvent = nil
+    return results[1]
+end
+
+tests["mage: starts with its own HP (fewer than the wizard)"] = function(g)
+    g = mageFight(g)
+    local t = g.data.tuning
+    assert(g.players[1].hp == t.characters.shieldmage.hp and g.players[1].hp < t.player.hp, "mage hp " .. g.players[1].hp)
+    assert(g.players[2].hp == t.player.hp, "wizard hp " .. g.players[2].hp)
+    assert(g.players[1]:maxHp(t) == t.characters.shieldmage.hp, "max hp")
+end
+
+tests["mage: walks as fast as the wizard"] = function(g)
+    g = mageFight(g)
+    local m, w = g.players[1], g.players[2]
+    local mx, wx = m.x, w.x
+    step(g, 0.5, { { x = 1, y = 0, dash = false }, { x = -1, y = 0, dash = false } })
+    local mageGone, wizGone = m.x - mx, wx - w.x
+    assert(math.abs(mageGone - wizGone) < 0.01, string.format("mage %.1f px vs wizard %.1f px", mageGone, wizGone))
+end
+
+-- Lasting, decaying shields: an optional per-character rule (shieldLasts +
+-- shieldDecay), tried on the mage and the wizard and switched off for both
+-- (docs/SIMULATION.md results log, 2026-11-04). Kept working for experiments.
+tests["option: lasting shield charges decay one at a time, faster the more you hold"] = function(g)
+    local rules = g.data.tuning.characters.shieldmage
+    local decay = 40
+    rules.shieldLasts, rules.shieldDecay = true, decay
+    local ok, err = pcall(function()
+        local f = mageFight(g)
+        local m = f.players[1]
+        give(f, 1, "combo"); fill(f, 1, "shield", "shield")
+        give(f, 1, "combo"); fill(f, 1, "accelerate", "accelerate") -- ends the shield's window
+        assert(m.shield == 2, "charges outlast the window, got " .. m.shield)
+        m.decayProgress = 0 -- 2 charges: next goes after decay / 2 seconds
+        step(f, decay / 2 - 0.5)
+        assert(m.shield == 2, "2 charges hold for a while, got " .. m.shield)
+        step(f, 1)
+        assert(m.shield == 1, "then one decays, got " .. m.shield)
+        m.shield, m.decayProgress = 10, 0 -- 10 charges: one every decay / 10 seconds
+        step(f, decay / 10 + 0.1)
+        assert(m.shield == 9, "a big stack melts fast, got " .. m.shield)
+        assert(math.abs(m:shieldDecayLeft(f.data.tuning) - decay / 9) < 0.2, "next one at the new rate")
+    end)
+    rules.shieldLasts, rules.shieldDecay = nil, nil
+    assert(ok, err)
+end
+
+tests["mage: shield charges end with the effect window, like the wizard's"] = function(g)
+    g = mageFight(g)
+    give(g, 1, "combo"); fill(g, 1, "shield", "shield")
+    assert(g.players[1].shield == 2, "2 charges")
+    give(g, 1, "combo"); fill(g, 1, "accelerate", "accelerate") -- ends the shield's window
+    assert(g.players[1].shield == 0, "charges should end with the window, got " .. g.players[1].shield)
+end
+
+tests["mage: a parry in time stops the beam, keeps the shield, and clears the cooldown"] = function(g)
+    g = mageFight(g)
+    local m = g.players[1]
+    m.shield = 1
+    local result = parryAt(g, 0.1)
+    assert(result == "parried", "expected a parry, got " .. tostring(result))
+    assert(m.hp == m:maxHp(g.data.tuning) and m.shield == 1, "no damage and no charge used")
+    assert(m.dashCooldown == 0, "a successful parry has no cooldown")
+end
+
+tests["mage: the parry window is a bit longer than a dash, not much"] = function(g)
+    local t = g.data.tuning
+    local win = t.characters.shieldmage.parry.window
+    assert(win > t.dash.duration and win <= t.dash.duration * 2,
+        string.format("window %.2f s vs dash %.2f s", win, t.dash.duration))
+    g = mageFight(g)
+    assert(parryAt(g, win - 0.03) == "parried", "late in the window should still parry")
+end
+
+tests["mage: a parry too early misses and keeps the cooldown"] = function(g)
+    g = mageFight(g)
+    local m, p = g.players[1], g.data.tuning.characters.shieldmage.parry
+    local result = parryAt(g, p.window + 0.15)
+    assert(result == "hit" and m.hp == m:maxHp(g.data.tuning) - 1, "an early parry should miss, got " .. tostring(result))
+    assert(m.dashCooldown > 0, "a missed parry keeps its cooldown")
+end
+
+tests["mage: one parry stops a whole volley"] = function(g)
+    g = mageFight(g)
+    local w, m = g.players[2], g.players[1]
+    give(g, 2, "combo"); fill(g, 2, "attack", "attack")
+    step(g, g.data.tuning.spells.telegraph - 0.1)
+    step(g, DT, { PARRY, IDLE })
+    step(g, 0.2)
+    assert(m.hp == m:maxHp(g.data.tuning), "both beams should be parried, hp " .. m.hp)
+end
+
+tests["option: a successful parry gives shieldOnParry charges, once per press"] = function(g)
+    local p = g.data.tuning.characters.shieldmage.parry
+    local old = p.shieldOnParry
+    p.shieldOnParry = 1
+    local ok, err = pcall(function()
+        local f = mageFight(g)
+        local m = f.players[1]
+        give(f, 2, "combo"); fill(f, 2, "attack", "attack") -- a volley of 2, one press
+        step(f, f.data.tuning.spells.telegraph - 0.1)
+        step(f, DT, { PARRY, IDLE })
+        step(f, 0.2)
+        assert(m.hp == m:maxHp(f.data.tuning), "both parried")
+        assert(m.shield == 1, "one charge per parry press, got " .. m.shield)
+    end)
+    p.shieldOnParry = old
+    assert(ok, err)
+end
+
+tests["option: a successful parry heals healOnParry HP, once per press, up to full"] = function(g)
+    local p = g.data.tuning.characters.shieldmage.parry
+    local old = p.healOnParry
+    p.healOnParry = 1
+    local ok, err = pcall(function()
+        local f = mageFight(g)
+        local m = f.players[1]
+        local full = m:maxHp(f.data.tuning)
+        m.hp = full - 2
+        give(f, 2, "combo"); fill(f, 2, "attack", "attack") -- a volley of 2, one press
+        step(f, f.data.tuning.spells.telegraph - 0.1)
+        step(f, DT, { PARRY, IDLE })
+        step(f, 0.2)
+        assert(m.hp == full - 1, "one HP per parry press, got " .. m.hp)
+        m.hp = full
+        assert(parryAt(f, 0.1) == "parried" and m.hp == full, "never above full HP")
+    end)
+    p.healOnParry = old
+    assert(ok, err)
+end
+
+tests["mage: a 'dash' trap fires when the mage parries"] = function(g)
+    g = mageFight(g)
+    local fired = 0
+    g.onEvent = function(e) if e.type == "trapFired" and e.trigger == "dash" then fired = fired + 1 end end
+    give(g, 1, "when"); fill(g, 1, "dash", "shield")
+    step(g, DT, { PARRY, IDLE })
+    assert(fired == 1, "the parry should set off the trap")
+end
+
+tests["mage bot: parries a beam just before it lands"] = function(g)
+    g = mageFight(g)
+    g:castSpell(g.players[2], "attack")
+    local bot = Bot.new(1, math.random, { human = false })
+    assert(not bot:update(DT, g).dash, "too early to parry")
+    local lead = g.data.tuning.bot.parryLead
+    step(g, g.data.tuning.spells.telegraph - lead + 0.02)
+    assert(bot:update(DT, g).dash, "should parry now")
+end
+
+tests["mage bot: parry timing has human error, about 80% in the window"] = function(g)
+    local t = g.data.tuning
+    local ok, n = 0, 400
+    local n2, tally = n, {}
+    for _ = 1, n do
+        local f = mageFight(g)
+        local bot = Bot.new(1, math.random, { human = { missChance = 0 } })
+        f:castSpell(f.players[2], "attack")
+        local result
+        f.onEvent = function(e) if e.type == "laser" then result = e.result end end
+        for _ = 1, math.ceil((t.spells.telegraph + 0.5) / DT) do
+            f:update(DT, { bot:update(DT, f), IDLE })
+        end
+        if result == "parried" then ok = ok + 1 end
+        if result == "wall" or result == nil then n2 = n2 - 1 end
+        tally[tostring(result)] = (tally[tostring(result)] or 0) + 1
+    end
+    local rate = ok / n2
+    local parts = {}
+    for k, v in pairs(tally) do parts[#parts + 1] = k .. " " .. v end
+    assert(rate > 0.65 and rate < 0.92, string.format("parry rate %.0f%% (%s)", rate * 100, table.concat(parts, ", ")))
+end
+
+tests["mage vs wizard bots play a full round"] = function(g)
+    g = newFight(g.data, { "shieldmage", "wizard" })
+    g.wordfield.enabled = true
+    local bots = { Bot.new(1, math.random), Bot.new(2, math.random) }
+    local parried = 0
+    g.onEvent = function(e) if e.type == "laser" and e.result == "parried" then parried = parried + 1 end end
+    for _ = 1, 60 * 180 do
+        g:update(DT, { bots[1]:update(DT, g), bots[2]:update(DT, g) })
+        if g.state == "over" then break end
+    end
+    print(string.format("      mage vs wizard: hp %d / %d, %d parries, winner %s",
+        g.players[1].hp, g.players[2].hp, parried, tostring(g.winner or "none in 180 s")))
+    assert(parried > 0, "the mage bot should parry at least once")
 end
 
 ---------------------------------------------------------------- character select
@@ -862,8 +1112,10 @@ selectTests["select: both confirm, match starts after the delay"] = function(sel
     assert(sel.result.characters[1] == "wizard" and sel.result.control[2] == "human", "default setup")
 end
 
-selectTests["select: a character that isn't built can't be confirmed"] = function(sel)
-    sel:press(1, "right") -- shield mage, available = false
+selectTests["select: a character that isn't built can't be confirmed"] = function(_, data)
+    local list = { data.characters.list[1], { id = "later", name = "Later", available = false, lines = {} } }
+    local sel = Select.new(list)
+    sel:press(1, "right")
     assert(not sel:character(1).available, "second character should be locked")
     sel:press(1, "confirm")
     assert(not sel.panels[1].ready and sel.panels[1].refused > 0, "confirm should be refused")

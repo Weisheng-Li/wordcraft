@@ -7,7 +7,7 @@ local Sim = require("src.sim")
 
 local SimJobs = {}
 
--- opts: { rounds | minutes, workers, p1, p2, cap, seed, progress = fn(done, total, secondsLeft) }
+-- opts: { rounds | minutes, workers, p1, p2, c1, c2, cap, seed, progress = fn(done, total, secondsLeft) }
 function SimJobs.run(opts)
     local workers = opts.workers or love.system.getProcessorCount()
     if opts.rounds then workers = math.min(workers, opts.rounds) end
@@ -15,7 +15,7 @@ function SimJobs.run(opts)
     local threads = {}
     for i = 1, workers do
         threads[i] = love.thread.newThread("src/simworker.lua")
-        threads[i]:start(jobs, results, opts.p1 or "", opts.p2 or "", opts.cap, opts.seed)
+        threads[i]:start(jobs, results, opts.p1 or "", opts.p2 or "", opts.cap, opts.seed, opts.c1 or "", opts.c2 or "")
     end
 
     local start = love.timer.getTime()

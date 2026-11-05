@@ -11,14 +11,18 @@ Game.__index = Game
 
 -- data: { tuning, arena, templates, words = { list, byId, byType }, training }
 -- opts: { width, height, rand, mode = "versus" | "training",
---         characters = { id, id } (from data/characters.json; default wizards) }
+--         characters = { id, id } (from data/characters.json; default wizards),
+--         pickCharacter = true: training starts with every character standing
+--         in the room; walk into one to play it (DESIGN §14) }
 function Game.new(data, opts)
     local self = setmetatable({}, Game)
     self.data = data
     self.width, self.height = opts.width, opts.height
     self.rand = opts.rand
     self.mode = opts.mode or "versus"
-    self.characters = opts.characters or { "wizard", "wizard" }
+    local chars = opts.characters or { "wizard", "wizard" }
+    self.characters = { chars[1], chars[2] } -- a copy: training can change P1
+    self.pickCharacter = opts.pickCharacter
     self:reset()
     return self
 end
@@ -65,7 +69,23 @@ function Game:showTrainingCategory(i)
 end
 
 function Game:nextTrainingCategory()
+    if self.trainingPicks then return end -- no tabs while picking a character
     self:showTrainingCategory(self.trainingCategory + 1)
+end
+
+-- Training: become character `id` where you stand. Template and effects are
+-- cleared, the other characters leave and the tiles appear. Only F2
+-- (a fresh training room) brings the pick back.
+function Game:pickTrainingCharacter(id)
+    local c, p, book = self.data.characters.byId[id], self.players[1], self.spellbooks[1]
+    self.characters[1] = id
+    p.character, p.sprite = id, c.sprite .. "_blue"
+    p.hp = p:maxHp(self.data.tuning)
+    book:clearEffect()
+    book.template = nil
+    p.shield, p.decayProgress = 0, 0
+    self.trainingPicks = nil
+    self:showTrainingCategory(1)
 end
 
 function Game:reset()
@@ -77,10 +97,9 @@ function Game:reset()
     local chars = self.data.characters.byId
     local c1, c2 = chars[self.characters[1]], chars[self.characters[2]]
     self.players = {
-        Player.new(1, s1.x, s1.y, c1.sprite .. "_blue", t),
-        Player.new(2, s2.x, s2.y, training and "dummy" or (c2.sprite .. "_red"), t),
+        Player.new(1, s1.x, s1.y, c1.sprite .. "_blue", t, c1.id),
+        Player.new(2, s2.x, s2.y, training and "dummy" or (c2.sprite .. "_red"), t, not training and c2.id or nil),
     }
-    self.players[1].character, self.players[2].character = c1.id, c2.id
     self.players[2].facing = -1
 
     local cast = function(caster, spell, source) self:castSpell(caster, spell, source) end
@@ -102,7 +121,25 @@ function Game:reset()
         for _, p in ipairs(self.players) do p.infiniteHp = true end
         for _, book in ipairs(self.spellbooks) do book.sandbox = true end
         self.trainingSets = trainingTiles(self.data, self.arena)
-        self:showTrainingCategory(1)
+        if self.pickCharacter then
+            -- Character pick: every available character stands in the room
+            -- and the floor has no tiles until one is chosen.
+            self.trainingPicks = {}
+            local spots = self.data.training.characterSpots
+            for _, c in ipairs(self.data.characters.list) do
+                local spot = c.available and spots[#self.trainingPicks + 1]
+                if spot then
+                    local x, y = self.arena:tileCenter(spot.col, spot.row)
+                    self.trainingPicks[#self.trainingPicks + 1] =
+                        { id = c.id, sprite = c.sprite .. "_blue", x = x, y = y + t.player.hitboxH / 2 }
+                end
+            end
+            self.wordfield:setStatic({})
+            -- Until then you're a ghost, so you don't look like one of them.
+            self.players[1].character, self.players[1].sprite = "ghost", "ghost"
+        else
+            self:showTrainingCategory(1)
+        end
         self.dummyCooldown = 0
         self.state = "fight"
     else
@@ -195,6 +232,13 @@ function Game:updateTraining(dt, inputs)
     local t = self.data.tuning
     local p, book = self.players[1], self.spellbooks[1]
     p:update(dt, inputs[1], t, self.arena)
+    for _, pick in ipairs(self.trainingPicks or {}) do
+        local dx, dy = pick.x - p.x, pick.y - p.y
+        if dx * dx + dy * dy <= t.words.pickupRadius ^ 2 then
+            self:pickTrainingCharacter(pick.id)
+            break
+        end
+    end
     self.wordfield:update(dt, t, { p }, { book }, self.rand)
     self:updateLasers(dt)
     book:update(dt, t, self.rand)

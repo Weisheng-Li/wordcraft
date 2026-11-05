@@ -2,7 +2,7 @@
   "characters": [
     {
       "id": "wizard",
-      "name": "Wizard",
+      "name": "Spellslinger",
       "sprite": "wizard",
       "available": true,
       "lines": [
@@ -10,20 +10,19 @@
         "Templates stack on timeout:",
         "bigger spells, more words."
       ],
-      "speed": 3,
       "difficulty": 3
     },
     {
       "id": "shieldmage",
-      "name": "Shield Mage",
-      "available": false,
+      "name": "Bulwark",
+      "sprite": "shieldmage",
+      "available": true,
       "lines": [
-        "Shields never expire.",
-        "Slam hits all around, through",
-        "walls; costs shield. Slower."
+        "3 HP. Each parry heals 1.",
+        "Shift raises the shield: parry",
+        "a hit the moment it lands."
       ],
-      "speed": 2,
-      "difficulty": 1
+      "difficulty": 2
     }
   ]
 }

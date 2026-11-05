@@ -6,8 +6,9 @@ require("love.filesystem")
 local Sim = require("src.sim")
 local loadData = require("src.data")
 
-local jobs, results, p1, p2, cap, seed = ...
-local opts = { p1 = p1 ~= "" and p1 or nil, p2 = p2 ~= "" and p2 or nil, cap = cap, seed = seed }
+local jobs, results, p1, p2, cap, seed, c1, c2 = ...
+local opts = { p1 = p1 ~= "" and p1 or nil, p2 = p2 ~= "" and p2 or nil, cap = cap, seed = seed,
+               c1 = c1 ~= "" and c1 or nil, c2 = c2 ~= "" and c2 or nil }
 local data = loadData(love.filesystem.read)
 
 while true do

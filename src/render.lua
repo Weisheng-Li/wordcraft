@@ -32,6 +32,7 @@ local C = {
     reset     = { hex("#94b0c2") },  -- training-room reset tile
     player    = { { hex("#41a6f6") }, { hex("#e43b44") } }, -- per-player: beams, orbs, pickups
     hpText    = { hex("#ff6b6b") },
+    heal      = { hex("#a7f070") },
     -- Template text / timer colour per stack level (1, 2, 3).
     level     = { { hex("#f4f4f4") }, { hex("#ffcd75") }, { hex("#ff77c8") } },
     p1        = { hex("#73eff7") },
@@ -43,13 +44,17 @@ local CHEST = 13    -- laser height above the feet
 
 local fonts = {}
 local hurt = { 0, 0 }   -- hit-flash timers, purely visual
+local parryFlash = { 0, 0 } -- Bulwark: time left on the successful-parry flash
+local parryBursts = {}      -- { x, y, age } bursts from successful parries
 local levelFlash = { 0, 0 } -- HUD flash when a template stacks up
 local lastLevel = {}
 
--- Floating combat text ("-1", "BLOCK", "DODGE") spawned once per fired beam.
+-- Floating combat text ("-1", "BLOCK", "DODGE", "PARRY") spawned once per
+-- fired beam.
 local FLOAT_TIME = 0.9
 local floaters = {}                               -- { text, color, x, y, age }
 local seenBeams = setmetatable({}, { __mode = "k" })
+local seenHeal = setmetatable({}, { __mode = "k" }) -- player -> healed total already shown
 local drawFloaters -- defined with the other floater code below
 
 -- Pickup feedback: the taken tile flies to the picker, a ring bursts at the
@@ -264,17 +269,22 @@ end
 local function drawPlayer(game, p, sprites, time)
     local tuning = game.data.tuning
     local casting = isCasting(game, p)
-    local walk = not casting and walkFrame(p, sprites)
-    local img = sprites[casting and (p.sprite .. "_cast") or walk or p.sprite]
+    -- Bulwark: shield raised while parrying, and held up through the
+    -- success flash. It wins over the casting pose, and turns the shield
+    -- (on the sprite's left) toward the opponent.
+    local parrying = p.parry or parryFlash[p.id] > 0
+    local walk = not casting and not parrying and walkFrame(p, sprites)
+    local img = sprites[(parrying and p.sprite .. "_parry") or (casting and p.sprite .. "_cast") or walk or p.sprite]
     local w, h = img:getDimensions()
     local facing = casting and castFacing(game, p) or p.facing
+    if parrying then facing = castFacing(game, p) end -- the raised shield is in front
     local fade = expiryFade(game, p)
 
     setColor(C.shadow)
     love.graphics.ellipse("fill", p.x, p.y, 6, 2)
     if game.spellbooks[p.id].trap then drawTrapRune(game, p, time, fade) end
 
-    local alpha = p:isDashing() and 0.45 or 1
+    local alpha = p:isDashing() and 0.45 or (p.character == "ghost" and 0.8 or 1) -- the ghost is see-through
     if hurt[p.id] > 0 and math.floor(hurt[p.id] * 20) % 2 == 0 then
         love.graphics.setColor(1, 0.4, 0.4, alpha)
     else
@@ -282,6 +292,14 @@ local function drawPlayer(game, p, sprites, time)
     end
 
     love.graphics.draw(img, math.floor(p.x), math.floor(p.y), 0, facing, 1, w / 2, h)
+    -- Successful parry: the whole mage flashes white for a moment.
+    local flash = parryFlash[p.id] / tuning.characters.shieldmage.parry.flashTime
+    if flash > 0.6 then
+        love.graphics.setBlendMode("add")
+        love.graphics.setColor(1, 1, 1, (flash - 0.6) / 0.4)
+        love.graphics.draw(img, math.floor(p.x), math.floor(p.y), 0, facing, 1, w / 2, h)
+        love.graphics.setBlendMode("alpha")
+    end
 
     -- One charging orb per laser: grows with the aim, flashes before firing.
     -- A raise with no attack (shield / accelerate) shows a small gold glint.
@@ -312,20 +330,32 @@ local function drawPlayer(game, p, sprites, time)
         end
     end
 
-    -- Dash cooldown: a small bar over the head, only while recharging.
+    -- Dash (or parry) cooldown: a small bar over the head, only while recharging.
     if p.dashCooldown > 0 then
         local bw = 14
         local bx, by = math.floor(p.x - bw / 2), math.floor(p.y - h - 4)
         setColor(C.hpEmpty)
         love.graphics.rectangle("fill", bx, by, bw, 2)
         setColor(C.dim)
-        love.graphics.rectangle("fill", bx, by, math.floor(bw * (1 - p.dashCooldown / tuning.dash.cooldown) + 0.5), 2)
+        love.graphics.rectangle("fill", bx, by, math.floor(bw * (1 - p.dashCooldown / p:specialCooldown(tuning)) + 0.5), 2)
     end
 
     -- Shield charges: one ring per charge up to 5; beyond that a single
     -- bold ring with the count ("x6"), so a big stack stays readable.
+    -- Lasting charges (optional rule, off for now) ignore the template's expiry; instead the
+    -- one about to decay (outermost ring, or the count) flashes like an
+    -- expiring effect in its last `expiryWarning` seconds.
+    local tt = tuning.templates
+    local lasting = p:rules(tuning).shieldLasts
+    local shieldFade = lasting and 1 or fade
+    local nextFade = shieldFade
+    local left = p:shieldDecayLeft(tuning)
+    if left and left <= tt.expiryWarning then
+        local phase = (tt.expiryWarning - left) / tt.expiryWarning * tt.expiryFlashes
+        nextFade = (phase % 1) < 0.5 and 0.15 or 1
+    end
     if p.shield > 5 then
-        setColor(C.shield, fade)
+        setColor(C.shield, shieldFade)
         love.graphics.setLineWidth(3)
         love.graphics.circle("line", p.x, p.y - 12, 14)
         love.graphics.setLineWidth(1)
@@ -333,13 +363,13 @@ local function drawPlayer(game, p, sprites, time)
         local f = fonts.small
         love.graphics.setFont(f)
         local lx, ly = math.floor(p.x + 11), math.floor(p.y - 30)
-        setColor(C.bg, fade)
+        setColor(C.bg, nextFade)
         love.graphics.print(label, lx + 1, ly + 1)
-        setColor(C.shield, fade)
+        setColor(C.shield, nextFade)
         love.graphics.print(label, lx, ly)
     else
         for i = 1, p.shield do
-            setColor(C.shield, (0.9 - (i - 1) * 0.1) * fade)
+            setColor(C.shield, (0.9 - (i - 1) * 0.1) * (i == p.shield and nextFade or shieldFade))
             love.graphics.circle("line", p.x, p.y - 12, 11 + (i - 1) * 3)
         end
     end
@@ -386,7 +416,11 @@ local function drawLasers(game, sprites, time)
         love.graphics.setColor(1, 1, 1, 1)
         love.graphics.setLineWidth(math.max(1, 3 * k))
         love.graphics.line(x1, y1, x2, y2)
-        if b.result == "blocked" then
+        if b.result == "parried" then
+            -- Stopped dead at the raised shield: a big gold spark.
+            setColor(C.timer)
+            love.graphics.circle("fill", x2, y2, 8 * k + 2)
+        elseif b.result == "blocked" then
             setColor(C.shield)
             love.graphics.circle("fill", x2, y2, 6 * k + 2)
         elseif b.result == "wall" then
@@ -416,6 +450,29 @@ local function drawConditionRings(game)
         for id in pairs(used) do
             setColor(C.player[k], 0.6)
             love.graphics.circle("line", p.x, p.y, radius[id])
+        end
+    end
+end
+
+-- Successful parry burst, at the mage's chest: a gold ring snapping outward,
+-- eight sparks flying off and a white core, all fading over flashTime.
+local function drawParryBursts(game)
+    local total = game.data.tuning.characters.shieldmage.parry.flashTime
+    for _, b in ipairs(parryBursts) do
+        local k = b.age / total -- 0 -> 1
+        local e = 1 - (1 - k) * (1 - k) -- fast out, slow settle
+        local x, y = b.x, b.y - CHEST
+        love.graphics.setColor(1, 1, 1, 1 - k * 2)
+        love.graphics.circle("fill", x, y, 6 * (1 - k))
+        setColor(C.timer, 1 - k)
+        love.graphics.setLineWidth(2)
+        love.graphics.circle("line", x, y, 5 + e * 16)
+        love.graphics.setLineWidth(1)
+        for i = 0, 7 do
+            local a = i / 8 * math.pi * 2 + 0.3
+            local r1, r2 = 6 + e * 10, 9 + e * 18
+            love.graphics.setColor(1, 1, 1, 1 - k)
+            love.graphics.line(x + math.cos(a) * r1, y + math.sin(a) * r1, x + math.cos(a) * r2, y + math.sin(a) * r2)
         end
     end
 end
@@ -457,10 +514,23 @@ local function drawWorld(game, sprites, time)
     for _, p in ipairs(game.players) do
         items[#items + 1] = { y = p.y, draw = function() drawPlayer(game, p, sprites, time) end }
     end
+    -- Training character pick: each character stands in the room, facing you.
+    for _, pick in ipairs(game.trainingPicks or {}) do
+        items[#items + 1] = { y = pick.y, draw = function()
+            local img = sprites[pick.sprite]
+            local w, h = img:getDimensions()
+            setColor(C.shadow)
+            love.graphics.ellipse("fill", pick.x, pick.y, 6, 2)
+            love.graphics.setColor(1, 1, 1)
+            local facing = game.players[1].x <= pick.x and -1 or 1
+            love.graphics.draw(img, math.floor(pick.x), math.floor(pick.y), 0, facing, 1, w / 2, h)
+        end }
+    end
     table.sort(items, function(a, b) return a.y < b.y end)
     for _, it in ipairs(items) do it.draw() end
 
     drawLasers(game, sprites, time)
+    drawParryBursts(game)
     drawPickups()
     drawFloaters()
 end
@@ -468,9 +538,11 @@ end
 ---------------------------------------------------------------- HUD
 
 -- Template as a list of text and blank tokens (Spellbook.tokens).
-local function templateTokens(book, words)
+local function templateTokens(book, words, picking)
     local tpl = book.template
-    -- No template: "..." in versus (one is about to be dealt); a hint in training.
+    -- No template: "..." in versus (one is about to be dealt); a hint in
+    -- training (none yet while a character is being picked).
+    if picking then return {} end
     if not tpl then return { { text = book.sandbox and "pick up a template tile" or "..." } } end
     return Spellbook.tokens(tpl, function(id) return words.byId[id].label end)
 end
@@ -618,7 +690,7 @@ local function drawPanel(game, k, x)
     -- the heart + HP pips on the left and the timeout bar on the right.
     -- (At least 2 lines' worth, so the trap row doesn't jump around while
     -- the next template is being dealt.)
-    local lines = math.max(2, drawTokens(templateTokens(book, words), x, 0, PANEL_W - 4, levelCol))
+    local lines = math.max(2, drawTokens(templateTokens(book, words, game.trainingPicks and k == 1), x, 0, PANEL_W - 4, levelCol))
 
     -- Effect text gets the whole row, so even a level-3 trap fits; anything
     -- longer is cut at the panel edge rather than running into the other panel.
@@ -631,13 +703,13 @@ local function drawPanel(game, k, x)
     love.graphics.print(fitText(text, fonts.small, room), x, math.min(lines * 9 + 6, 29))
 
     drawHeart(x, 38)
-    for i = 1, t.player.hp do
+    for i = 1, p:maxHp(t) do
         setColor(i <= p.hp and C.hp or C.hpEmpty)
         love.graphics.rectangle("fill", x + 8 + (i - 1) * 5, 38, 4, 4)
     end
 
     -- Template timeout, coloured by stack level (no timeouts in training)
-    local barX = x + 8 + t.player.hp * 5 + 6
+    local barX = x + 8 + t.player.hp * 5 + 6 -- same length for every character, whatever its HP
     local tl = book.template and book.template.timeLeft / book.template.timeTotal or 0
     if not book.sandbox then drawBar(barX, 39, x + PANEL_W - 4 - barX, tl, levelCol) end
 end
@@ -653,6 +725,10 @@ local function trainingGuide(game)
     local tpl = book.template
     local max = t.stacking.maxLevel
     local level = tpl and tpl.level or 0
+    -- Before anything else: no tab is showing while a character is picked.
+    if game.trainingPicks then
+        return "PICK A CHARACTER", { "walk into a character", "to play as them" }, "F2: back to the match"
+    end
     local tab = game.data.training.categories[game.trainingCategory].type
 
     -- A trap was just armed and nothing new is being built yet.
@@ -809,8 +885,8 @@ local function drawSelectPanel(sel, k, x, sprites, time)
     for i, line in ipairs(char.lines or {}) do
         printCentered(line, f, cx, y0 + 112 + (i - 1) * 9)
     end
-    drawPips("speed", char.speed or 0, x + 8, y0 + 140)
-    drawPips("difficulty", char.difficulty or 0, x + 74, y0 + 140)
+    local pipsW = f:getWidth("difficulty") + 3 + 16 -- label, gap, 3 pips
+    drawPips("difficulty", char.difficulty or 0, math.floor(cx - pipsW / 2), y0 + 140)
 
     -- Footer: who sets this panel, or its state.
     local footer, footerCol
@@ -892,17 +968,21 @@ local function spawnFloaters(game)
     for _, b in ipairs(game.beams) do
         if not seenBeams[b] then
             seenBeams[b] = true
+            local target = game:opponentOf(b.caster)
             local text, color
             if b.result == "hit" then
                 text, color = "-" .. t.spells.attackDamage, C.hpText
-                hurt[game:opponentOf(b.caster).id] = 0.4
+                hurt[target.id] = 0.4
             elseif b.result == "blocked" then
                 text, color = "BLOCK", C.shield
             elseif b.result == "dodged" then
                 text, color = "DODGE", C.text
+            elseif b.result == "parried" then
+                text, color = "PARRY", C.timer
+                parryFlash[target.id] = t.characters.shieldmage.parry.flashTime
+                parryBursts[#parryBursts + 1] = { x = target.x, y = target.y, age = 0 }
             end
             if text then
-                local target = game:opponentOf(b.caster)
                 -- Stack texts that land together (a volley) so each is readable.
                 local stack = 0
                 for _, f in ipairs(floaters) do
@@ -914,6 +994,21 @@ local function spawnFloaters(game)
                 }
             end
         end
+    end
+    -- Heals (Bulwark's parry heal): a green "+N", stacked like the rest.
+    for _, p in ipairs(game.players) do
+        local seen = seenHeal[p] or 0
+        if p.healed > seen then
+            local stack = 0
+            for _, f in ipairs(floaters) do
+                if f.target == p and f.age < 0.3 then stack = stack + 1 end
+            end
+            floaters[#floaters + 1] = {
+                text = "+" .. (p.healed - seen), color = C.heal, target = p, age = 0,
+                x = p.x, y = p.y - 30 - stack * 8,
+            }
+        end
+        seenHeal[p] = p.healed
     end
 end
 
@@ -944,9 +1039,15 @@ function Render.update(dt, game)
         floaters[i].age = floaters[i].age + dt
         if floaters[i].age >= FLOAT_TIME then table.remove(floaters, i) end
     end
+    local burstTime = game.data.tuning.characters.shieldmage.parry.flashTime
+    for i = #parryBursts, 1, -1 do
+        parryBursts[i].age = parryBursts[i].age + dt
+        if parryBursts[i].age >= burstTime then table.remove(parryBursts, i) end
+    end
 
     for k, p in ipairs(game.players) do
         hurt[k] = math.max(0, hurt[k] - dt)
+        parryFlash[k] = math.max(0, parryFlash[k] - dt)
 
         local tpl = game.spellbooks[k].template
         local level = tpl and tpl.level or lastLevel[k]
@@ -959,7 +1060,7 @@ end
 function Render.draw(game, sprites, time)
     love.graphics.clear(C.bg)
     drawWorld(game, sprites, time)
-    if game.mode == "training" then drawCategoryTabs(game) end
+    if game.mode == "training" and not game.trainingPicks then drawCategoryTabs(game) end
     drawHud(game)
     drawBanner(game)
 end

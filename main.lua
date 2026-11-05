@@ -3,7 +3,7 @@
 -- integer factor so pixels stay crisp.
 --
 -- Debug flags (after the game folder):
---   love . --selftest   love . --shot   love . --shot-training   love . --shot-select   love . --bot
+--   love . --selftest   love . --shot   love . --shot-training   love . --shot-select   love . --shot-pick   love . --shot-parry   love . --bot
 --   lovec . --sim 400 | --sim 1m [--stats] [--workers 8] [--cap 300] [--p1 profile] [--p2 profile]
 --     (bot vs bot balance run: a number of rounds, or minutes; --stats
 --     rewrites docs/STATS.md. See docs/SIMULATION.md.)
@@ -55,7 +55,8 @@ end
 
 local function newGame()
     game = Game.new(data, { width = GAME_W, height = GAME_H, rand = math.random, mode = mode,
-                            characters = setup.characters })
+                            characters = setup.characters,
+                            pickCharacter = mode == "training" and showcased ~= "training" })
     screen = "game"
     dashPressed = { false, false }
 end
@@ -78,7 +79,7 @@ function love.load(args)
             for j = i + 1, #args do
                 local key, value = args[j]:match("^%-%-(%w+)$"), args[j + 1]
                 if key == "seed" or key == "cap" or key == "workers" then opts[key] = tonumber(value) end
-                if key == "p1" or key == "p2" then opts[key] = value end
+                if key == "p1" or key == "p2" or key == "c1" or key == "c2" then opts[key] = value end
                 if key == "stats" then
                     opts.writeStats = function(text)
                         local path = love.filesystem.getSource() .. "/docs/STATS.md"
@@ -120,6 +121,12 @@ function love.load(args)
             return
         elseif a == "--shot-training" then
             shotAt, mode, showcased = 2.5, "training", "training"
+        elseif a == "--shot-parry" then
+            -- Bulwark vs wizard, a beam parried just now
+            shotAt, showcased = 3.12, "parry"
+            setup.characters = { "shieldmage", "wizard" }
+        elseif a == "--shot-pick" then
+            shotAt, mode, showcased = 1.0, "training", true -- training room character pick
         elseif a == "--shot-select" then
             shotAt, showcased = 0.5, "select"
         elseif a == "--shot" then
@@ -132,17 +139,26 @@ function love.load(args)
     love.graphics.setDefaultFilter("nearest", "nearest")
     canvas = love.graphics.newCanvas(GAME_W, GAME_H)
     Render.load()
-    for _, name in ipairs({ "wizard_blue", "wizard_red", "dummy" }) do
+    for _, name in ipairs({ "wizard_blue", "wizard_red", "shieldmage_blue", "shieldmage_red", "ghost", "dummy" }) do
         sprites[name] = love.graphics.newImage("assets/sprites/" .. name .. ".png")
         sprites[name .. "_cast"] = love.graphics.newImage("assets/sprites/" .. name .. "_cast.png")
-        for f = 1, 4 do -- walk cycle (wizards only)
-            local path = "assets/sprites/" .. name .. "_walk" .. f .. ".png"
-            if love.filesystem.getInfo(path) then sprites[name .. "_walk" .. f] = love.graphics.newImage(path) end
+        -- Optional frames: walk cycle (not the dummy), raised shield (Bulwark).
+        for _, suffix in ipairs({ "_walk1", "_walk2", "_walk3", "_walk4", "_parry" }) do
+            local path = "assets/sprites/" .. name .. suffix .. ".png"
+            if love.filesystem.getInfo(path) then sprites[name .. suffix] = love.graphics.newImage(path) end
         end
     end
 
+    -- Dev shortcut (data/dev.json): skip character select and start the
+    -- configured match. Screenshot flags ignore it.
+    local dev = love.filesystem.getInfo("data/dev.json") and require("src.json").decode(love.filesystem.read("data/dev.json"))
+    local quick = not shotAt and dev and dev.quickStart
+    quick = quick and quick.enabled and quick
+    if quick then
+        setup = { characters = { quick.characters[1], quick.characters[2] }, control = { quick.control[1], quick.control[2] } }
+    end
     makeBots()
-    if shotAt and showcased ~= "select" then newGame() else openSelect() end
+    if quick or (shotAt and showcased ~= "select") then newGame() else openSelect() end
 end
 
 local function readInput(k)
@@ -197,6 +213,10 @@ function love.update(dt)
         require("src.selftest").showcaseTraining(game)
         showcased = true
     end
+    if showcased == "parry" and game.state == "fight" then
+        require("src.selftest").showcaseParry(game)
+        showcased = true
+    end
     if shotAt and not showcased and game.state == "fight" then
         require("src.selftest").showcase(game)
         showcased = true
@@ -241,12 +261,10 @@ local SELECT_ACTIONS = { up = "up", down = "down", left = "left", right = "right
 function love.keypressed(key)
     if key == "f5" then love.event.quit("restart") end -- reloads code and data from disk
     if key == "f2" then
-        if mode == "training" then
-            openSelect()
-        else
-            mode = "training"
-            newGame()
-        end
+        -- Toggle: a match opens the training room (with its character pick),
+        -- the training room goes back to a match with the select-screen setup.
+        mode = (screen == "game" and game and game.mode == "training") and "versus" or "training"
+        newGame()
         return
     end
     if screen == "select" then

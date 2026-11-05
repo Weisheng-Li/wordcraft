@@ -10,6 +10,20 @@
     "decelTime": 0.05,
     "cornerNudge": 4
   },
+  "characters": {
+    "wizard": {},
+    "shieldmage": {
+      "hp": 3,
+      "special": "parry",
+      "parry": {
+        "window": 0.25,
+        "cooldown": 2.0,
+        "flashTime": 0.35,
+        "shieldOnParry": 0,
+        "healOnParry": 1
+      }
+    }
+  },
   "dash": {
     "distance": 48,
     "duration": 0.15,
@@ -70,7 +84,9 @@
     "attackBonus": 0.3,
     "denyBonus": 0.5,
     "contestRatio": 0.6,
-    "lostCause": 0.3
+    "lostCause": 0.3,
+    "parryLead": 0.125,
+    "parryJitter": 0.1
   },
   "botProfiles": {
     "sharp": { "human": false },

@@ -13,7 +13,7 @@ The simulation plays **bot vs bot** rounds with no window, much faster than real
 ## Running it
 
 ```
-lovec . --sim 1m [--stats] [--workers N] [--cap 300] [--p1 PROFILE] [--p2 PROFILE]
+lovec . --sim 1m [--stats] [--workers N] [--cap 300] [--p1 PROFILE] [--p2 PROFILE] [--c1 CHARACTER] [--c2 CHARACTER]
 ```
 
 | Option | Meaning |
@@ -23,6 +23,7 @@ lovec . --sim 1m [--stats] [--workers N] [--cap 300] [--p1 PROFILE] [--p2 PROFIL
 | `--workers N` | Worker threads (default: one per logical CPU core) |
 | `--cap S` | A round that hasn't ended after `S` seconds of fight time is stopped and counted as "no winner" (default 300). |
 | `--p1`, `--p2` | Bot profile for that side, from `botProfiles` in `data/tuning.json` (default: the plain `bot` settings) |
+| `--c1`, `--c2` | Character for that side, an id from `data/characters.json` (default: `wizard`). Note the report adds both sides together; the CSV has a `player` column for per-side numbers. |
 
 - **Speed:** rounds are spread over worker threads, one per logical CPU core. On the dev machine (8 cores, 16 threads) that's about **145 rounds per minute**: ~150 rounds in 1 min, ~1,450 in 10 min. 16 threads measured 15% faster than 8. One round alone takes about 2.7 s (a round averages ~160 s of game time, at a fixed 60 steps per second).
 - **Seeds:** every run uses a fresh random seed, so two runs of the same code give slightly different numbers. That difference is what the ± measures.
@@ -137,6 +138,52 @@ Some value is indirect. Speed, for example, means more words, which means more c
 ## Results log
 
 Newest first. Each entry records the bot version, because bot changes shift every number. Raw numbers for every gameplay commit are in the history of [STATS.md](STATS.md).
+
+### 2026-11-05 — Bulwark parry rewards: shield charge vs heal
+
+- **Question:** with expiring shields and 5 HP, Bulwark (id `shieldmage`) lost 41 / 59 to the Spellslinger (`wizard`). Which reward for a successful parry fixes that? Options under `characters.shieldmage.parry`: `shieldOnParry` (charges per successful parry press, ordinary ones that end with the effect window) and `healOnParry` (HP per press, up to full). Same bots as the entry below; 1,000 rounds per row, Spellslinger P1.
+- **Result:**
+
+  | Parry reward | Spellslinger wins | Bulwark wins | Median round | Hits on Bulwark / round | Hits on Spellslinger / round |
+  |---|---|---|---|---|---|
+  | None | 59.1% | 40.9% | 97 s | ~4.1 | ~7.3 |
+  | +1 shield charge | 48.4% | 51.4% | 106 s | ~3.8 | ~7.9 |
+  | +1 HP | 16.8% | 83.0% | 124 s | ~5.2 (most healed back) | ~9.3 |
+  | +1 HP, Bulwark max HP 3 | 49.1% | 50.8% | 95 s (10%: 34 s, 90%: 169 s) | ~3.9 | ~7.1 |
+
+- **Reading:** a charge on parry is roughly even (within ±1.6) and keeps rounds near the mirror's length. A heal at 5 HP undoes damage already taken: Bulwark parries ~10 times a round, so it out-heals the Spellslinger's ~5 hits and the rounds drag. Heal with max HP 3 is also even, but swingier: the shortest 10% of rounds end by 34 s (three quick hits before a parry lands) and the longest 10% run past 169 s (a parrying Bulwark that keeps topping up).
+
+### 2026-11-04 — Bulwark vs wizard, balance
+
+- **Setup:** wizard (P1) vs Bulwark (P2), plain bots with human limits; the mage bot parries noticed beams with ~80% timing (`parryJitter`). 1,000 rounds per row. Mage: 5 HP, parry `0.25 s` window, no cooldown on success.
+- **Result:**
+
+  | Mage shields | Wizard wins | Mage wins | Median round | Wizard hits on mage / round | Mage hits on wizard / round |
+  |---|---|---|---|---|---|
+  | Lasting, decay `40 / n` | 11.2% | 88.6% | 126 s | ~1.8 | ~9.7 |
+  | Expire (kept) | 59.1% | 40.9% | 97 s | ~4.1 | ~7.3 |
+
+  (Wizard mirror for reference: 51 / 49, median 111 s.) With expiring shields ~18% of all beams are parried; the mage picks up ~5% fewer words than the wizard (no dash for word races).
+- **Reading:** lasting shields were what made the mage dominant, not the parry. With the wizard's shields and 5 HP it is now slightly weak against the bot; rounds are shorter because 5 HP goes quickly. HP 6 is the obvious next try.
+
+### 2026-11-04 — lasting, decaying shields (wizard mirror)
+
+- **Question:** the Bulwark briefly had shield charges that outlast the effect window and decay instead (with `n` charges the next goes after `40 / n` s). Would that rule be good for the game in general? Run with the rule given to both wizards (`characters.wizard`: `shieldLasts`, `shieldDecay` 40) vs the normal expiring charges. Plain bots with human limits, 1,000 rounds each, `--c1`/`--c2` both wizard.
+- **Result:**
+
+  | | Expire (kept) | Decay (`40 / n` s) |
+  |---|---|---|
+  | Round length, median | 111 s | 187 s (+70%) |
+  | Stopped at the 300 s cap | 0% | 9.1% |
+  | Beams per minute | ~29.5 | ~30.6 |
+  | Beams: hit / blocked / wall | 29% / 13% / 57% | 15% / 40% / 44% |
+  | HP hits per minute | ~8.6 | ~4.7 |
+  | Shield charges that block something | 23% | 70% |
+  | Return per word, level 1 / level 3 | 0.37 / 0.37 | 0.50 / 0.21 |
+  | Reading load | 10.6 | 10.5 |
+
+- **Reading:** same casting pace, but charges that last get used, so damage per minute halves and rounds drag (1 in 11 hits the cap). Cheap shield templates (`repeat` 0.84 per word) beat big stacked attacks (level 3 drops to 0.21), so stacking loses its point. Bots with a covering shield stack don't hide, so fewer beams hit walls: a more static, defensive game.
+- **Decision:** dropped for every character; shields expire with the effect window. The rule stays as a per-character option for experiments. A much faster decay (~10–15) might be a middle ground, untested.
 
 ### 2026-11-01 — strategy bots: what beats the plain bot
 

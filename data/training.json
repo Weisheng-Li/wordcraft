@@ -18,6 +18,7 @@
     "range": 64,
     "cooldown": 2.5
   },
+  "characterSpots": [ { "col": 5, "row": 2 }, { "col": 5, "row": 6 }, { "col": 9, "row": 2 }, { "col": 9, "row": 6 } ],
   "categories": [
     { "id": "templates",  "label": "TEMPLATES",  "type": "template" },
     { "id": "spells",     "label": "SPELLS",     "type": "spell" },

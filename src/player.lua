@@ -6,14 +6,16 @@
 local Player = {}
 Player.__index = Player
 
-function Player.new(id, x, y, sprite, tuning)
+-- character: an id under `characters` in tuning.json (default "wizard").
+function Player.new(id, x, y, sprite, tuning, character)
     local self = setmetatable({}, Player)
     self.id = id
     self.sprite = sprite
+    self.character = character or "wizard"
     self.x, self.y = x, y
     self.facing = 1            -- 1 = right, -1 = left (sprite flip only)
     self.aimX, self.aimY = 1, 0 -- last movement direction, used for dashing in place
-    self.hp = tuning.player.hp
+    self.hp = self:maxHp(tuning)
     self.dashTime = 0          -- > 0 while dashing
     self.dashCooldown = 0
     self.dashX, self.dashY = 0, 0
@@ -21,12 +23,61 @@ function Player.new(id, x, y, sprite, tuning)
     self.knockTime = 0         -- > 0 while being pushed back by a hit
     self.knockX, self.knockY = 0, 0
     self.shield = 0            -- shield charges
+    self.decayProgress = 0     -- lasting shields (optional): 0..1 toward losing the next charge
     self.accelerate = 0        -- accelerate stacks (each adds accelerateBonus)
     self.infiniteHp = false    -- training room: hits still land, HP never drops
     self.vx, self.vy = 0, 0    -- walking velocity
+    self.parry = nil           -- Bulwark: { time, total, success } while the shield is raised
+    self.healed = 0            -- HP healed so far (parry heal), read by render
     -- Per-frame events, read by conditions and cleared by Game at frame end.
-    self.justDashed = false
+    self.justDashed = false    -- the dash key started a dash (or a parry)
     return self
+end
+
+-- This character's rules (`characters.<id>` in tuning.json).
+function Player:rules(tuning)
+    return tuning.characters[self.character] or {}
+end
+
+-- Starting (and full) HP: per character, else tuning.player.hp.
+function Player:maxHp(tuning)
+    return self:rules(tuning).hp or tuning.player.hp
+end
+
+-- Seconds until the next shield charge decays at the current count, or nil
+-- if this character's charges don't decay (or there are none).
+function Player:shieldDecayLeft(tuning)
+    local decay = self:rules(tuning).shieldDecay
+    if not decay or self.shield <= 0 then return nil end
+    return (1 - self.decayProgress) * decay / self.shield
+end
+
+function Player:moveSpeed(tuning)
+    return self:rules(tuning).moveSpeed or tuning.player.moveSpeed
+end
+
+-- What the dash key does: "dash", or "parry" for the Bulwark.
+function Player:special(tuning)
+    return self:rules(tuning).special or "dash"
+end
+
+-- Full cooldown of the dash key (dash or parry), for the bar over the head.
+function Player:specialCooldown(tuning)
+    local r = self:rules(tuning)
+    return r.special == "parry" and r.parry.cooldown or tuning.dash.cooldown
+end
+
+-- Can the dash key be used now?
+function Player:canSpecial(tuning)
+    return self.dashCooldown <= 0 and not self:isDashing() and not self.parry
+end
+
+-- Raise the shield: anything that lands in the next `parry.window` seconds
+-- is parried. The cooldown starts now; a successful parry clears it.
+function Player:startParry(tuning)
+    local p = self:rules(tuning).parry
+    self.parry = { time = p.window, total = p.window, success = false }
+    self.dashCooldown = p.cooldown
 end
 
 function Player:isDashing()
@@ -53,10 +104,35 @@ function Player:update(dt, input, tuning, arena)
         if ix ~= 0 then self.facing = ix > 0 and 1 or -1 end
     end
 
-    if input.dash and self.dashCooldown <= 0 and not self:isDashing() then
-        self.dashTime = t.dash.duration
-        self.dashCooldown = t.dash.cooldown
-        self.dashX, self.dashY = self.aimX, self.aimY
+    -- Parry window (the mage keeps walking with the shield up).
+    if self.parry then
+        self.parry.time = self.parry.time - dt
+        if self.parry.time <= 0 then self.parry = nil end
+    end
+
+    -- Optional lasting shields (shieldLasts + shieldDecay, off for everyone
+    -- now): charges decay one at a time, faster the more you
+    -- hold. With n charges the next one goes after shieldDecay / n seconds
+    -- (progress carries over, so gaining charges speeds up the current one).
+    local decay = self:rules(t).shieldDecay
+    if decay and self.shield > 0 then
+        self.decayProgress = self.decayProgress + dt * self.shield / decay
+        if self.decayProgress >= 1 then
+            self.shield = self.shield - 1
+            self.decayProgress = 0
+        end
+    else
+        self.decayProgress = 0
+    end
+
+    if input.dash and self:canSpecial(t) then
+        if self:special(t) == "parry" then
+            self:startParry(t)
+        else
+            self.dashTime = t.dash.duration
+            self.dashCooldown = t.dash.cooldown
+            self.dashX, self.dashY = self.aimX, self.aimY
+        end
         self.justDashed = true
     end
 
@@ -69,11 +145,11 @@ function Player:update(dt, input, tuning, arena)
         moved = true
         if not self:isDashing() then
             -- Come out of the dash at walking speed instead of a dead stop.
-            local walk = t.player.moveSpeed * (1 + self.accelerate * t.spells.accelerateBonus)
+            local walk = self:moveSpeed(t) * (1 + self.accelerate * t.spells.accelerateBonus)
             self.vx, self.vy = self.dashX * walk, self.dashY * walk
         end
     else
-        local speed = t.player.moveSpeed
+        local speed = self:moveSpeed(t)
         speed = speed * (1 + self.accelerate * t.spells.accelerateBonus)
         local tx, ty = ix * speed, iy * speed
         self:steer(tx, ty, speed, dt, t.movement)
@@ -128,9 +204,26 @@ function Player:steer(tx, ty, speed, dt, m)
 end
 
 -- Apply a laser hit coming from (fromX, fromY).
--- Returns "dodged", "blocked" or "hit". A real hit also pushes the player
--- straight away from the shooter.
+-- Returns "parried", "dodged", "blocked" or "hit". A parry (Bulwark,
+-- shield raised) beats everything else: no damage, no charge used, and the
+-- parry's cooldown is cleared. A real hit pushes the player straight away
+-- from the shooter.
 function Player:receiveHit(damage, fromX, fromY, tuning)
+    if self.parry then
+        -- Optional rewards for the first beam a parry stops: `shieldOnParry`
+        -- shield charges (ordinary ones, ending with the effect window) and
+        -- `healOnParry` HP (up to full).
+        local gain = (self:rules(tuning).parry or {}).shieldOnParry or 0
+        if not self.parry.success then
+            self.shield = self.shield + gain
+            local heal = math.min(self:rules(tuning).parry.healOnParry or 0, self:maxHp(tuning) - self.hp)
+            self.hp = self.hp + heal
+            self.healed = self.healed + heal -- running total, for the "+1" floater
+        end
+        self.parry.success = true
+        self.dashCooldown = 0
+        return "parried"
+    end
     if self:isInvulnerable() then return "dodged" end
     if self.shield > 0 then
         self.shield = self.shield - 1
